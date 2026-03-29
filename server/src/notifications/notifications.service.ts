@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import type { Notification, NotificationPreference } from '@prisma/client';
 import { DateTime } from 'luxon';
 
 import type { SessionUser } from '../auth/auth.types';
@@ -35,7 +36,7 @@ export class NotificationsService {
     });
 
     return {
-      unreadCount: notifications.filter((notification) => !notification.read)
+      unreadCount: notifications.filter((notification) => !notification.readAtUtc)
         .length,
       notifications: notifications.map((notification) =>
         this.toNotificationResponse(notification),
@@ -66,11 +67,14 @@ export class NotificationsService {
       create: {
         userId: viewer.id,
         scheduleUpdates:
-          body.scheduleUpdates ?? DEFAULT_NOTIFICATION_PREFERENCES.scheduleUpdates,
+          body.scheduleUpdates ??
+          DEFAULT_NOTIFICATION_PREFERENCES.scheduleUpdates,
         coverageUpdates:
-          body.coverageUpdates ?? DEFAULT_NOTIFICATION_PREFERENCES.coverageUpdates,
+          body.coverageUpdates ??
+          DEFAULT_NOTIFICATION_PREFERENCES.coverageUpdates,
         overtimeWarnings:
-          body.overtimeWarnings ?? DEFAULT_NOTIFICATION_PREFERENCES.overtimeWarnings,
+          body.overtimeWarnings ??
+          DEFAULT_NOTIFICATION_PREFERENCES.overtimeWarnings,
         availabilityUpdates:
           body.availabilityUpdates ??
           DEFAULT_NOTIFICATION_PREFERENCES.availabilityUpdates,
@@ -95,11 +99,12 @@ export class NotificationsService {
     );
 
     if (!notification.readAtUtc) {
-      notification.readAtUtc = DateTime.utc().toISO() ?? '';
+      const readAtUtc = new Date();
       await this.prisma.notification.update({
         where: { id: notification.id },
-        data: { readAtUtc: new Date(notification.readAtUtc) },
+        data: { readAtUtc },
       });
+      notification.readAtUtc = readAtUtc;
       this.realtimeService.publish({
         topic: 'notifications.updated',
         visibility: { userIds: [viewer.id] },
@@ -174,7 +179,10 @@ export class NotificationsService {
     }
   }
 
-  private async getNotificationForViewer(userId: string, notificationId: string) {
+  private async getNotificationForViewer(
+    userId: string,
+    notificationId: string,
+  ) {
     const notification = await this.prisma.notification.findFirst({
       where: {
         id: notificationId,
@@ -206,7 +214,9 @@ export class NotificationsService {
     const preferences = await this.prisma.notificationPreference.findMany({
       where: { userId: { in: userIds } },
     });
-    const existingIds = new Set(preferences.map((preference) => preference.userId));
+    const existingIds = new Set(
+      preferences.map((preference) => preference.userId),
+    );
     const missingUserIds = userIds.filter((userId) => !existingIds.has(userId));
 
     if (missingUserIds.length > 0) {
@@ -232,9 +242,7 @@ export class NotificationsService {
   }
 
   private toNotificationResponse(
-    notification: Awaited<
-      ReturnType<NotificationsService['getNotificationForViewer']>
-    >,
+    notification: Notification,
   ): NotificationResponse {
     const createdAtUtc = notification.createdAtUtc.toISOString();
 
@@ -253,7 +261,7 @@ export class NotificationsService {
   }
 
   private toPreferencesResponse(
-    preference: ReturnType<NotificationsService['getPreferenceRecordForUser']>,
+    preference: NotificationPreference,
   ): NotificationPreferencesResponse {
     return {
       scheduleUpdates: preference.scheduleUpdates,
@@ -264,7 +272,7 @@ export class NotificationsService {
   }
 
   private isTypeEnabled(
-    preference: ReturnType<NotificationsService['getPreferenceRecordForUser']>,
+    preference: NotificationPreference,
     type: NotificationType,
   ) {
     switch (type) {

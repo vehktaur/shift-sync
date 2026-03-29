@@ -325,24 +325,6 @@ export type NotificationType =
   | 'overtime_warning'
   | 'availability_changed';
 
-export type NotificationPreferenceRecord = {
-  userId: string;
-  scheduleUpdates: boolean;
-  coverageUpdates: boolean;
-  overtimeWarnings: boolean;
-  availabilityUpdates: boolean;
-};
-
-export type NotificationRecord = {
-  id: string;
-  userId: string;
-  type: NotificationType;
-  title: string;
-  body: string;
-  readAtUtc?: string;
-  createdAtUtc: string;
-};
-
 export type NotificationResponse = {
   id: string;
   type: NotificationType;
