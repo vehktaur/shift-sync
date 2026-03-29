@@ -1,7 +1,7 @@
 import { DEMO_PASSWORD } from './auth.constants';
 import type { DemoAccount, SessionUser, User, UserRole } from './auth.types';
 
-const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
+export const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
   admin: [
     'view_all_locations',
     'manage_all_users',

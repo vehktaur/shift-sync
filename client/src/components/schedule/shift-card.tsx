@@ -1,43 +1,66 @@
+import {
+  CalendarRange,
+  Clock3,
+  PencilLine,
+  Send,
+  ShieldAlert,
+  UserPlus,
+  Users,
+} from "lucide-react";
+import { toast } from "sonner";
 
-import { CalendarRange, Clock3, PencilLine, Send, ShieldAlert, UserPlus, Users } from "lucide-react";
-
-import { useScheduleWorkspace } from "@/components/schedule/schedule-workspace";
+import { useScheduleBoardData } from "@/components/schedule/use-schedule-board-data";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { usePublishShift, useUnpublishShift } from "@/hooks/use-scheduling";
+import { getApiErrorMessage } from "@/lib/api/client";
+import { useScheduleStore } from "@/stores/schedule-store";
 import type { ShiftResponse } from "@/types/scheduling";
 
-import { shiftStateBadgeVariant } from "./schedule.utils";
+import {
+  shiftStateBadgeVariant,
+  shiftStateDescriptions,
+  shiftStateLabels,
+} from "./schedule.utils";
 
 type ShiftCardProps = {
   shift: ShiftResponse;
 };
 
 export function ShiftCard({ shift }: ShiftCardProps) {
-  const {
-    canManageBoard,
-    openEditDialog,
-    publishingShiftId,
-    togglePublishShift,
-    unpublishingShiftId,
-  } = useScheduleWorkspace();
-  const isPublishing = publishingShiftId === shift.id;
-  const isUnpublishing = unpublishingShiftId === shift.id;
+  const openEditDialog = useScheduleStore((state) => state.openEditDialog);
+  const publishShiftMutation = usePublishShift();
+  const unpublishShiftMutation = useUnpublishShift();
+  const { canManageBoard } = useScheduleBoardData();
+  const isPublishing =
+    publishShiftMutation.isPending &&
+    publishShiftMutation.variables === shift.id;
+  const isUnpublishing =
+    unpublishShiftMutation.isPending &&
+    unpublishShiftMutation.variables === shift.id;
 
   return (
     <Card className="border-white/70 bg-white/85">
       <CardHeader className="gap-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="space-y-3">
+          <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant={shiftStateBadgeVariant[shift.state]}>
-                {shift.state}
-              </Badge>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge variant={shiftStateBadgeVariant[shift.state]}>
+                    {shiftStateLabels[shift.state]}
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {shiftStateDescriptions[shift.state]}
+                </TooltipContent>
+              </Tooltip>
               <Badge variant={shift.published ? "success" : "neutral"}>
                 {shift.published ? "Published" : "Draft"}
               </Badge>
@@ -45,7 +68,7 @@ export function ShiftCard({ shift }: ShiftCardProps) {
             <CardTitle>{shift.title}</CardTitle>
           </div>
 
-          {canManageBoard ? (
+          {canManageBoard && (
             <div className="flex flex-wrap gap-2">
               <Button
                 variant="outline"
@@ -59,7 +82,27 @@ export function ShiftCard({ shift }: ShiftCardProps) {
               <Button
                 size="sm"
                 variant={shift.published ? "outline" : "default"}
-                onClick={() => togglePublishShift(shift)}
+                onClick={async () => {
+                  try {
+                    if (shift.published) {
+                      await unpublishShiftMutation.mutateAsync(shift.id);
+                      toast.success(`${shift.title} moved to draft.`);
+                      return;
+                    }
+
+                    await publishShiftMutation.mutateAsync(shift.id);
+                    toast.success(`${shift.title} published.`);
+                  } catch (error) {
+                    toast.error(
+                      getApiErrorMessage(
+                        error,
+                        shift.published
+                          ? "Unable to unpublish shift."
+                          : "Unable to publish shift.",
+                      ),
+                    );
+                  }
+                }}
                 disabled={!shift.canEdit}
                 loading={shift.published ? isUnpublishing : isPublishing}
               >
@@ -67,38 +110,41 @@ export function ShiftCard({ shift }: ShiftCardProps) {
                 {shift.published ? "Unpublish" : "Publish"}
               </Button>
             </div>
-          ) : null}
+          )}
         </div>
       </CardHeader>
 
-      <CardContent className="space-y-5">
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="space-y-3 border border-border/70 bg-background/70 p-4">
+      <CardContent className="space-y-3">
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="space-y-2 border border-border/70 bg-background/70 px-2.5 py-2">
             <div className="flex items-center gap-2">
               <Clock3 className="size-4 text-primary" />
-              <p className="text-sm font-semibold text-foreground">Time</p>
+              <h3 className="text-sm font-semibold text-foreground">Time</h3>
             </div>
             <p className="text-sm leading-6 text-muted-foreground">
               {shift.dateLabel} • {shift.timeLabel}
             </p>
           </div>
 
-          <div className="space-y-3 border border-border/70 bg-background/70 p-4">
+          <div className="space-y-2 border border-border/70 bg-background/70 px-2.5 py-2">
             <div className="flex items-center gap-2">
               <Users className="size-4 text-primary" />
-              <p className="text-sm font-semibold text-foreground">Coverage</p>
+              <h3 className="text-sm font-semibold text-foreground">
+                Coverage
+              </h3>
             </div>
             <p className="text-sm leading-6 text-muted-foreground">
-              {shift.assignees.length}/{shift.headcount} assigned • {shift.openSlots} open
+              {shift.assignees.length}/{shift.headcount} assigned •{" "}
+              {shift.openSlots} open
             </p>
             <p className="text-xs leading-6 text-muted-foreground">
-              {shift.requiredSkill}
+              Required skill: {shift.requiredSkill}
             </p>
           </div>
         </div>
 
         <div className="space-y-2">
-          <p className="text-sm font-semibold text-foreground">Assignees</p>
+          <h3 className="text-sm font-semibold text-foreground">Assignees</h3>
           {shift.assignees.length === 0 ? (
             <p className="text-sm leading-6 text-muted-foreground">
               No assignees yet.
@@ -117,22 +163,16 @@ export function ShiftCard({ shift }: ShiftCardProps) {
           )}
         </div>
 
-        <div className="space-y-2">
-          <p className="text-sm font-semibold text-foreground">Notes</p>
-          <p className="text-sm leading-6 text-foreground/85">{shift.note}</p>
-          {shift.explanation ? (
-            <p className="text-sm leading-6 text-muted-foreground">
-              {shift.explanation}
+        {shift.statusSummary && (
+          <div className="space-y-2">
+            <h3 className="text-sm font-semibold text-foreground">Status</h3>
+            <p className="text-sm leading-6 text-foreground/85">
+              {shift.statusSummary}
             </p>
-          ) : null}
-          {shift.projectedImpact ? (
-            <p className="text-sm leading-6 text-muted-foreground">
-              {shift.projectedImpact}
-            </p>
-          ) : null}
-        </div>
+          </div>
+        )}
 
-        {shift.warningMessages.length ? (
+        {shift.warningMessages.length > 0 && (
           <div className="space-y-2">
             {shift.warningMessages.map((warning) => (
               <div
@@ -144,11 +184,13 @@ export function ShiftCard({ shift }: ShiftCardProps) {
               </div>
             ))}
           </div>
-        ) : null}
+        )}
 
-        {shift.suggestions?.length ? (
+        {shift.suggestions && shift.suggestions?.length > 0 && (
           <div className="space-y-2">
-            <p className="text-sm font-semibold text-foreground">Suggested</p>
+            <h3 className="text-sm font-semibold text-foreground">
+              Suggested alternatives
+            </h3>
             <div className="flex flex-wrap gap-2">
               {shift.suggestions.map((staff) => (
                 <div
@@ -160,14 +202,15 @@ export function ShiftCard({ shift }: ShiftCardProps) {
               ))}
             </div>
           </div>
-        ) : null}
+        )}
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/70 pt-4">
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <CalendarRange className="size-4 text-primary" />
-            Audit {shift.auditCount}
+            Audit history: {shift.auditCount} change
+            {shift.auditCount === 1 ? "" : "s"}
           </div>
-          {canManageBoard ? (
+          {canManageBoard && (
             <Button
               variant="outline"
               size="sm"
@@ -176,7 +219,7 @@ export function ShiftCard({ shift }: ShiftCardProps) {
               <UserPlus className="size-4" />
               Manage
             </Button>
-          ) : null}
+          )}
         </div>
       </CardContent>
     </Card>

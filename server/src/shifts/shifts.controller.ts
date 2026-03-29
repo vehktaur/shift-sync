@@ -1,25 +1,25 @@
 import {
-  BadRequestException,
   Body,
   Controller,
-  Delete,
   Get,
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 
 import { CurrentUser } from '../auth/current-user.decorator';
-import { SessionGuard } from '../auth/session.guard';
 import type { SessionUser } from '../auth/auth.types';
-import { SchedulingService } from './scheduling.service';
+import { SessionGuard } from '../auth/session.guard';
+import { SchedulingService } from '../scheduling/scheduling.service';
 import type {
+  EligibleStaffResponse,
   SchedulingBoardResponse,
-  ShiftAssignmentRequestBody,
+  ShiftReferenceDataResponse,
   ShiftMutationRequestBody,
   ShiftResponse,
-} from './scheduling.types';
+} from '../scheduling/scheduling.types';
 
 @Controller('shifts')
 @UseGuards(SessionGuard)
@@ -27,8 +27,24 @@ export class ShiftsController {
   constructor(private readonly schedulingService: SchedulingService) {}
 
   @Get('board')
-  getBoard(@CurrentUser() viewer: SessionUser): SchedulingBoardResponse {
-    return this.schedulingService.getSchedulingBoard(viewer);
+  getBoard(
+    @CurrentUser() viewer: SessionUser,
+    @Query('weekStart') weekStart?: string,
+  ): SchedulingBoardResponse {
+    return this.schedulingService.getSchedulingBoard(viewer, weekStart);
+  }
+
+  @Get('reference-data')
+  getReferenceData(): ShiftReferenceDataResponse {
+    return this.schedulingService.getShiftReferenceData();
+  }
+
+  @Get(':shiftId/eligible-staff')
+  getEligibleStaff(
+    @CurrentUser() viewer: SessionUser,
+    @Param('shiftId') shiftId: string,
+  ): EligibleStaffResponse[] {
+    return this.schedulingService.getEligibleStaffForShift(viewer, shiftId);
   }
 
   @Post()
@@ -48,28 +64,6 @@ export class ShiftsController {
     return this.schedulingService.updateShift(viewer, shiftId, body);
   }
 
-  @Post(':shiftId/assignments')
-  assignStaff(
-    @CurrentUser() viewer: SessionUser,
-    @Param('shiftId') shiftId: string,
-    @Body() body: ShiftAssignmentRequestBody,
-  ): ShiftResponse {
-    if (!body.staffId) {
-      throw new BadRequestException('staffId is required.');
-    }
-
-    return this.schedulingService.assignStaff(viewer, shiftId, body.staffId);
-  }
-
-  @Delete(':shiftId/assignments/:staffId')
-  removeStaff(
-    @CurrentUser() viewer: SessionUser,
-    @Param('shiftId') shiftId: string,
-    @Param('staffId') staffId: string,
-  ): ShiftResponse {
-    return this.schedulingService.removeAssignee(viewer, shiftId, staffId);
-  }
-
   @Post(':shiftId/publish')
   publishShift(
     @CurrentUser() viewer: SessionUser,
@@ -87,12 +81,18 @@ export class ShiftsController {
   }
 
   @Post('actions/publish-week')
-  publishWeek(@CurrentUser() viewer: SessionUser): SchedulingBoardResponse {
-    return this.schedulingService.publishVisibleWeek(viewer);
+  publishWeek(
+    @CurrentUser() viewer: SessionUser,
+    @Query('weekStart') weekStart?: string,
+  ): SchedulingBoardResponse {
+    return this.schedulingService.publishVisibleWeek(viewer, weekStart);
   }
 
   @Post('actions/unpublish-week')
-  unpublishWeek(@CurrentUser() viewer: SessionUser): SchedulingBoardResponse {
-    return this.schedulingService.unpublishVisibleWeek(viewer);
+  unpublishWeek(
+    @CurrentUser() viewer: SessionUser,
+    @Query('weekStart') weekStart?: string,
+  ): SchedulingBoardResponse {
+    return this.schedulingService.unpublishVisibleWeek(viewer, weekStart);
   }
 }

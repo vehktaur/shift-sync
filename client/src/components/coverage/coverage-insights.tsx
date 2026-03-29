@@ -1,16 +1,24 @@
 import Link from "next/link";
-import {
-  ArrowRightLeft,
-  Check,
-  Clock3,
-  RefreshCcw,
-  Siren,
-  TimerReset,
-} from "lucide-react";
+import { AlertCircle, ArrowRightLeft, TimerReset } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
+const coverageRules = [
+  {
+    icon: ArrowRightLeft,
+    title: "Swaps stay pending until the teammate accepts and a manager approves",
+  },
+  {
+    icon: TimerReset,
+    title: "Drop requests expire before the shift starts",
+  },
+  {
+    icon: AlertCircle,
+    title: "Editing a shift cancels active coverage requests for safety",
+  },
+];
 
 export function CoverageInsights() {
   return (
@@ -23,59 +31,28 @@ export function CoverageInsights() {
           <CardTitle>Coverage rules</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="border border-border/70 bg-background/70 p-4">
-            <div className="flex items-center gap-2">
-              <RefreshCcw className="size-4 text-primary" />
-              <p className="font-semibold">Edits cancel stale swaps</p>
-            </div>
-          </div>
-          <div className="border border-border/70 bg-background/70 p-4">
-            <div className="flex items-center gap-2">
-              <TimerReset className="size-4 text-primary" />
-              <p className="font-semibold">Drops can expire before service</p>
-            </div>
-          </div>
-          <div className="border border-border/70 bg-background/70 p-4">
-            <div className="flex items-center gap-2">
-              <Siren className="size-4 text-primary" />
-              <p className="font-semibold">Pending requests stay capped</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+          {coverageRules.map((rule) => {
+            const Icon = rule.icon;
 
-      <Card className="border-white/70 bg-white/85">
-        <CardHeader>
-          <Badge variant="critical" className="w-fit">
-            Flow
-          </Badge>
-          <CardTitle>Approval path</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
-          <div className="flex gap-3 border border-border/70 bg-background/70 p-4">
-            <Clock3 className="mt-0.5 size-4 text-primary" />
-            <p>Open the queue and review requests waiting on action.</p>
-          </div>
-          <div className="flex gap-3 border border-border/70 bg-background/70 p-4">
-            <ArrowRightLeft className="mt-0.5 size-4 text-primary" />
-            <p>Check the request parties and suggested replacements.</p>
-          </div>
-          <div className="flex gap-3 border border-border/70 bg-background/70 p-4">
-            <Check className="mt-0.5 size-4 text-primary" />
-            <p>Approve or cancel and let the board refresh from the backend.</p>
-          </div>
+            return (
+              <div
+                key={rule.title}
+                className="flex items-center gap-3 border border-border/70 bg-background/70 p-4"
+              >
+                <Icon className="size-4 text-primary" />
+                <h3 className="text-sm font-medium">{rule.title}</h3>
+              </div>
+            );
+          })}
         </CardContent>
       </Card>
 
       <Card className="border-white/70 bg-white/85">
         <CardContent className="space-y-3 p-5">
           <Badge variant="outline" className="w-fit">
-            Back to schedule
+            Schedule
           </Badge>
-          <p className="text-lg font-semibold tracking-tight">Weekly board</p>
-          <p className="text-sm leading-6 text-muted-foreground">
-            Review shifts, staffing, and publish status.
-          </p>
+          <h3 className="text-lg font-semibold tracking-tight">Weekly board</h3>
           <Button asChild>
             <Link href="/schedule">Open schedule</Link>
           </Button>

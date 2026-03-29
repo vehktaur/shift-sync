@@ -3,8 +3,8 @@
 import { Controller, type UseFormReturn } from "react-hook-form";
 import { format, isValid, parseISO } from "date-fns";
 import { Send } from "lucide-react";
+import { toast } from "sonner";
 
-import { useScheduleWorkspace } from "@/components/schedule/schedule-workspace";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -20,6 +20,8 @@ import {
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field";
+import { usePublishShift, useUnpublishShift } from "@/hooks/use-scheduling";
+import { getApiErrorMessage } from "@/lib/api/client";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -28,11 +30,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { getWeekEndDate } from "@/components/schedule/schedule.utils";
 import type { ShiftFormInputValues, ShiftFormValues } from "@/lib/schemas";
+import type {
+  ScheduleLocationResponse,
+  ShiftResponse,
+} from "@/types/scheduling";
 
 type ShiftFormPanelProps = {
   form: UseFormReturn<ShiftFormInputValues, unknown, ShiftFormValues>;
-  onSubmit: (values: ShiftFormValues) => void;
+  mode: "create" | "edit";
+  shift: ShiftResponse | null;
+  locations: ScheduleLocationResponse[];
+  skills: string[];
+  weekStartDate: string;
+  isSaving: boolean;
+  onSubmit: (values: ShiftFormValues) => Promise<void>;
 };
 
 const getDatePart = (value: string) => value.split("T")[0] ?? "";
@@ -48,12 +61,22 @@ const parseLocalDate = (value: string) => {
 const buildLocalDateTime = (datePart: string, timePart: string) =>
   datePart && timePart ? `${datePart}T${timePart}` : "";
 
+const buildShiftDateDisabledMatcher = (weekStartDate: string) => {
+  const weekEndDate = getWeekEndDate(weekStartDate);
+
+  return (date: Date) => {
+    const day = format(date, "yyyy-MM-dd");
+    return day < weekStartDate || day > weekEndDate;
+  };
+};
+
 type LocalDateTimeFieldProps = {
   id: string;
   label: string;
   value: string;
   invalid: boolean;
   disabled: boolean;
+  weekStartDate: string;
   onChange: (value: string) => void;
   error?: { message?: string };
 };
@@ -64,11 +87,13 @@ function LocalDateTimeField({
   value,
   invalid,
   disabled,
+  weekStartDate,
   onChange,
   error,
 }: LocalDateTimeFieldProps) {
   const dateValue = parseLocalDate(value);
   const timeValue = getTimePart(value);
+  const disableDate = buildShiftDateDisabledMatcher(weekStartDate);
 
   return (
     <Field data-invalid={invalid}>
@@ -80,6 +105,9 @@ function LocalDateTimeField({
           triggerDisabled={disabled}
           placeholder="Pick a date"
           dateFormat="EEE, MMM d, yyyy"
+          startMonth={new Date(2000, 0)}
+          endMonth={new Date(2100, 11)}
+          disabled={disableDate}
           onSelect={(date) => {
             const datePart = date ? format(date, "yyyy-MM-dd") : "";
             onChange(buildLocalDateTime(datePart, timeValue || "00:00"));
@@ -92,7 +120,9 @@ function LocalDateTimeField({
           disabled={disabled}
           aria-invalid={invalid}
           onChange={(event) => {
-            onChange(buildLocalDateTime(getDatePart(value), event.target.value));
+            onChange(
+              buildLocalDateTime(getDatePart(value), event.target.value),
+            );
           }}
         />
       </div>
@@ -101,30 +131,20 @@ function LocalDateTimeField({
   );
 }
 
-export function ShiftFormPanel({ form, onSubmit }: ShiftFormPanelProps) {
-  const {
-    activeShift,
-    createShiftLoading,
-    dialogMode,
-    publishShiftLoading,
-    scheduleBoard,
-    togglePublishShift,
-    unpublishShiftLoading,
-    updateShiftLoading,
-  } = useScheduleWorkspace();
-
-  if (!scheduleBoard) {
-    return null;
-  }
-
-  const mode = dialogMode ?? "create";
-  const shift = activeShift;
-  const locations = scheduleBoard.locations;
-  const skills = scheduleBoard.skills;
-  const selectedLocation =
-    locations.find((location) => location.id === form.watch("locationId")) ?? null;
-  const isSaving = createShiftLoading || updateShiftLoading;
-  const isPublishing = publishShiftLoading || unpublishShiftLoading;
+export function ShiftFormPanel({
+  form,
+  mode,
+  shift,
+  locations,
+  skills,
+  weekStartDate,
+  isSaving,
+  onSubmit,
+}: ShiftFormPanelProps) {
+  const publishShiftMutation = usePublishShift();
+  const unpublishShiftMutation = useUnpublishShift();
+  const isPublishing =
+    publishShiftMutation.isPending || unpublishShiftMutation.isPending;
 
   return (
     <div className="space-y-6 p-6">
@@ -133,7 +153,9 @@ export function ShiftFormPanel({ form, onSubmit }: ShiftFormPanelProps) {
           {mode === "create" ? "Create shift" : "Edit shift"}
         </Badge>
         <DialogTitle className="text-xl">
-          {mode === "create" ? "Shift details" : (shift?.title ?? "Shift details")}
+          {mode === "create"
+            ? "Shift details"
+            : (shift?.title ?? "Shift details")}
         </DialogTitle>
         <DialogDescription>
           Location, local time, skill, and headcount.
@@ -231,14 +253,15 @@ export function ShiftFormPanel({ form, onSubmit }: ShiftFormPanelProps) {
             control={form.control}
             render={({ field, fieldState }) => (
               <LocalDateTimeField
-                  id="startsAtLocal"
-                  label="Starts"
-                  value={field.value}
-                  invalid={fieldState.invalid}
-                  disabled={isSaving}
-                  onChange={field.onChange}
-                  error={fieldState.error}
-                />
+                id="startsAtLocal"
+                label="Starts"
+                value={field.value}
+                invalid={fieldState.invalid}
+                disabled={isSaving}
+                weekStartDate={weekStartDate}
+                onChange={field.onChange}
+                error={fieldState.error}
+              />
             )}
           />
 
@@ -247,14 +270,15 @@ export function ShiftFormPanel({ form, onSubmit }: ShiftFormPanelProps) {
             control={form.control}
             render={({ field, fieldState }) => (
               <LocalDateTimeField
-                  id="endsAtLocal"
-                  label="Ends"
-                  value={field.value}
-                  invalid={fieldState.invalid}
-                  disabled={isSaving}
-                  onChange={field.onChange}
-                  error={fieldState.error}
-                />
+                id="endsAtLocal"
+                label="Ends"
+                value={field.value}
+                invalid={fieldState.invalid}
+                disabled={isSaving}
+                weekStartDate={weekStartDate}
+                onChange={field.onChange}
+                error={fieldState.error}
+              />
             )}
           />
 
@@ -278,25 +302,6 @@ export function ShiftFormPanel({ form, onSubmit }: ShiftFormPanelProps) {
           />
         </FieldGroup>
 
-        {selectedLocation ? (
-          <div className="border border-border/70 bg-background/70 p-4">
-            <div className="space-y-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline">{selectedLocation.code}</Badge>
-                <Badge variant="secondary">
-                  {selectedLocation.timeZoneLabel}
-                </Badge>
-              </div>
-              <p className="text-sm font-medium text-foreground">
-                {selectedLocation.name}
-              </p>
-              <p className="text-sm leading-6 text-muted-foreground">
-                {selectedLocation.addressLine}
-              </p>
-            </div>
-          </div>
-        ) : null}
-
         <FieldError
           errors={
             form.formState.errors.root
@@ -306,18 +311,38 @@ export function ShiftFormPanel({ form, onSubmit }: ShiftFormPanelProps) {
         />
 
         <DialogFooter showCloseButton>
-          {shift ? (
+          {shift && (
             <Button
               type="button"
               variant={shift.published ? "outline" : "secondary"}
               loading={isPublishing}
-              onClick={() => togglePublishShift(shift)}
+              onClick={async () => {
+                try {
+                  if (shift.published) {
+                    await unpublishShiftMutation.mutateAsync(shift.id);
+                    toast.success(`${shift.title} moved to draft.`);
+                    return;
+                  }
+
+                  await publishShiftMutation.mutateAsync(shift.id);
+                  toast.success(`${shift.title} published.`);
+                } catch (error) {
+                  toast.error(
+                    getApiErrorMessage(
+                      error,
+                      shift.published
+                        ? "Unable to unpublish shift."
+                        : "Unable to publish shift.",
+                    ),
+                  );
+                }
+              }}
               disabled={!shift.canEdit || isSaving}
             >
               <Send className="size-4" />
               {shift.published ? "Unpublish shift" : "Publish shift"}
             </Button>
-          ) : null}
+          )}
           <Button type="submit" loading={isSaving}>
             {mode === "create" ? "Create shift" : "Save changes"}
           </Button>

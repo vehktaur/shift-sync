@@ -1,4 +1,5 @@
 import { DateTime } from 'luxon';
+import { DEFAULT_CUTOFF_HOURS } from './scheduling.constants';
 
 import type {
   CoverageRequestRecord,
@@ -55,8 +56,6 @@ export const schedulingStore: SchedulingStore = {
       region: 'NY',
       country: 'United States',
       addressLine: '85 10th Ave, New York, NY 10011',
-      mapUrl:
-        'https://www.google.com/maps/search/?api=1&query=85+10th+Ave+New+York+NY+10011',
       latitude: 40.7422,
       longitude: -74.0064,
     },
@@ -70,8 +69,6 @@ export const schedulingStore: SchedulingStore = {
       region: 'NJ',
       country: 'United States',
       addressLine: '30 Hudson St, Jersey City, NJ 07302',
-      mapUrl:
-        'https://www.google.com/maps/search/?api=1&query=30+Hudson+St+Jersey+City+NJ+07302',
       latitude: 40.7178,
       longitude: -74.0334,
     },
@@ -85,8 +82,6 @@ export const schedulingStore: SchedulingStore = {
       region: 'Lagos',
       country: 'Nigeria',
       addressLine: '1 Ozumba Mbadiwe Ave, Victoria Island, Lagos',
-      mapUrl:
-        'https://www.google.com/maps/search/?api=1&query=1+Ozumba+Mbadiwe+Ave+Victoria+Island+Lagos',
       latitude: 6.4317,
       longitude: 3.4215,
     },
@@ -100,8 +95,6 @@ export const schedulingStore: SchedulingStore = {
       region: 'Edo',
       country: 'Nigeria',
       addressLine: '12 Airport Rd, Benin City, Edo',
-      mapUrl:
-        'https://www.google.com/maps/search/?api=1&query=12+Airport+Rd+Benin+City+Edo',
       latitude: 6.335,
       longitude: 5.6037,
     },
@@ -133,7 +126,7 @@ export const schedulingStore: SchedulingStore = {
       createdByUserId: 'usr_mgr_lauren',
       updatedByUserId: 'usr_mgr_lauren',
       updatedAtUtc: toUtcIso('2026-03-26T10:15', 'America/New_York') ?? '',
-      cutoffHours: 48,
+      cutoffHours: DEFAULT_CUTOFF_HOURS,
       forceCutoffPassed: true,
       auditTrail: [
         makeAuditEntry('Shift created for the east-coast lunch rush.'),
@@ -159,7 +152,7 @@ export const schedulingStore: SchedulingStore = {
       createdByUserId: 'usr_mgr_lauren',
       updatedByUserId: 'usr_mgr_lauren',
       updatedAtUtc: toUtcIso('2026-03-27T14:10', 'America/New_York') ?? '',
-      cutoffHours: 48,
+      cutoffHours: DEFAULT_CUTOFF_HOURS,
       auditTrail: [
         makeAuditEntry('Dinner line draft created for Harbor Point.'),
       ],
@@ -178,7 +171,7 @@ export const schedulingStore: SchedulingStore = {
       createdByUserId: 'usr_mgr_maya',
       updatedByUserId: 'usr_mgr_maya',
       updatedAtUtc: toUtcIso('2026-03-27T11:00', 'Africa/Lagos') ?? '',
-      cutoffHours: 48,
+      cutoffHours: DEFAULT_CUTOFF_HOURS,
       auditTrail: [
         makeAuditEntry('Beachfront brunch published for the Lagos team.', {
           actorUserId: 'usr_mgr_maya',
@@ -202,15 +195,7 @@ export const schedulingStore: SchedulingStore = {
       createdByUserId: 'usr_mgr_maya',
       updatedByUserId: 'usr_mgr_maya',
       updatedAtUtc: toUtcIso('2026-03-27T16:45', 'Africa/Lagos') ?? '',
-      cutoffHours: 48,
-      seedContext: {
-        state: 'warning',
-        note: 'One bartender slot is still open before the close can publish.',
-        explanation:
-          'Sarah covers the certified bartender requirement, but the closing bar still needs a second legal closer before publish.',
-        projectedImpact:
-          'Assigning John keeps the close balanced without leaning on Devon for another late finish.',
-      },
+      cutoffHours: DEFAULT_CUTOFF_HOURS,
       auditTrail: [
         makeAuditEntry('Drafted Nigeria closing bar coverage.', {
           actorUserId: 'usr_mgr_maya',
@@ -232,7 +217,7 @@ export const schedulingStore: SchedulingStore = {
       createdByUserId: 'usr_mgr_lauren',
       updatedByUserId: 'usr_mgr_lauren',
       updatedAtUtc: toUtcIso('2026-03-27T12:10', 'America/New_York') ?? '',
-      cutoffHours: 48,
+      cutoffHours: DEFAULT_CUTOFF_HOURS,
       auditTrail: [
         makeAuditEntry('Mid-week terrace dinner drafted for Harbor Point.'),
       ],
@@ -251,15 +236,7 @@ export const schedulingStore: SchedulingStore = {
       createdByUserId: 'usr_mgr_lauren',
       updatedByUserId: 'usr_mgr_lauren',
       updatedAtUtc: toUtcIso('2026-03-27T13:25', 'America/New_York') ?? '',
-      cutoffHours: 48,
-      seedContext: {
-        state: 'warning',
-        note: 'Olivia stays legal here, but this shift pushes her toward the week’s overtime edge.',
-        explanation:
-          'Keeping Olivia on Wednesday leaves little flexibility for the weekend and makes any added premium close expensive.',
-        projectedImpact:
-          'Swapping this assignment to another cook would lower projected overtime before Friday even starts.',
-      },
+      cutoffHours: DEFAULT_CUTOFF_HOURS,
       auditTrail: [
         makeAuditEntry(
           'Boardwalk hot line seeded with Olivia to model overtime drift.',
@@ -280,15 +257,7 @@ export const schedulingStore: SchedulingStore = {
       createdByUserId: 'usr_mgr_maya',
       updatedByUserId: 'usr_mgr_maya',
       updatedAtUtc: toUtcIso('2026-03-27T17:10', 'Africa/Lagos') ?? '',
-      cutoffHours: 48,
-      seedContext: {
-        state: 'blocked',
-        note: 'A second assignment attempt was blocked by timezone-aware availability.',
-        explanation:
-          'Ethan Cole keeps a 9:00 AM - 5:00 PM recurring window in each location’s timezone. This Lagos dinner shift starts after that local window ends.',
-        projectedImpact:
-          'Aisha is the safest qualified fallback because she stays inside the shift window and does not trigger a rest violation.',
-      },
+      cutoffHours: DEFAULT_CUTOFF_HOURS,
       auditTrail: [
         makeAuditEntry(
           'Sunset Pier dinner seeded with an availability conflict.',
@@ -313,7 +282,7 @@ export const schedulingStore: SchedulingStore = {
       createdByUserId: 'usr_mgr_maya',
       updatedByUserId: 'usr_mgr_maya',
       updatedAtUtc: toUtcIso('2026-03-27T19:00', 'Africa/Lagos') ?? '',
-      cutoffHours: 48,
+      cutoffHours: DEFAULT_CUTOFF_HOURS,
       auditTrail: [
         makeAuditEntry('Premium Friday bar shift created for Tidehouse.', {
           actorUserId: 'usr_mgr_maya',
@@ -340,7 +309,7 @@ export const schedulingStore: SchedulingStore = {
       createdByUserId: 'usr_mgr_lauren',
       updatedByUserId: 'usr_mgr_lauren',
       updatedAtUtc: toUtcIso('2026-03-27T15:30', 'America/New_York') ?? '',
-      cutoffHours: 48,
+      cutoffHours: DEFAULT_CUTOFF_HOURS,
       auditTrail: [
         makeAuditEntry('Friday premium patio shift drafted for Harbor Point.'),
       ],
@@ -359,13 +328,7 @@ export const schedulingStore: SchedulingStore = {
       createdByUserId: 'usr_mgr_lauren',
       updatedByUserId: 'usr_mgr_lauren',
       updatedAtUtc: toUtcIso('2026-03-27T17:05', 'America/New_York') ?? '',
-      cutoffHours: 48,
-      seedContext: {
-        state: 'warning',
-        note: 'The final premium slot is still open, and the fairness score will dip if it lands on Maria again.',
-        explanation:
-          'Priya is closer to her desired hours and Devon can cover without creating a certification or availability problem, so both are better premium balancing options.',
-      },
+      cutoffHours: DEFAULT_CUTOFF_HOURS,
       auditTrail: [
         makeAuditEntry(
           'Saturday rush seeded with a fairness warning for premium distribution.',
@@ -386,7 +349,7 @@ export const schedulingStore: SchedulingStore = {
       createdByUserId: 'usr_mgr_maya',
       updatedByUserId: 'usr_mgr_maya',
       updatedAtUtc: toUtcIso('2026-03-27T20:05', 'Africa/Lagos') ?? '',
-      cutoffHours: 48,
+      cutoffHours: DEFAULT_CUTOFF_HOURS,
       auditTrail: [
         makeAuditEntry('Saturday premium close drafted for Sunset Pier.', {
           actorUserId: 'usr_mgr_maya',
@@ -408,13 +371,7 @@ export const schedulingStore: SchedulingStore = {
       createdByUserId: 'usr_mgr_lauren',
       updatedByUserId: 'usr_mgr_lauren',
       updatedAtUtc: toUtcIso('2026-03-27T18:30', 'America/New_York') ?? '',
-      cutoffHours: 48,
-      seedContext: {
-        state: 'pending',
-        note: 'A drop request is pending manager approval, but the original assignment still remains live.',
-        explanation:
-          'Maria is still the scheduled assignee until the manager approves a replacement, which keeps payroll and staffing history consistent.',
-      },
+      cutoffHours: DEFAULT_CUTOFF_HOURS,
       auditTrail: [
         makeAuditEntry('Sunday emergency dinner coverage published to staff.', {
           actorUserId: 'usr_mgr_lauren',
@@ -438,13 +395,7 @@ export const schedulingStore: SchedulingStore = {
       createdByUserId: 'usr_mgr_maya',
       updatedByUserId: 'usr_mgr_maya',
       updatedAtUtc: toUtcIso('2026-03-27T21:10', 'Africa/Lagos') ?? '',
-      cutoffHours: 48,
-      seedContext: {
-        state: 'blocked',
-        note: 'Managers can see the conflict instantly if they reach for a bartender already reserved elsewhere.',
-        explanation:
-          'John Rivera is already reserved against another overlapping Nigeria close, so the backend rejects any second assignment immediately.',
-      },
+      cutoffHours: DEFAULT_CUTOFF_HOURS,
       auditTrail: [
         makeAuditEntry(
           'Conflict scenario seeded for simultaneous bartender assignment.',
@@ -469,7 +420,7 @@ export const schedulingStore: SchedulingStore = {
       createdByUserId: 'usr_mgr_maya',
       updatedByUserId: 'usr_mgr_maya',
       updatedAtUtc: toUtcIso('2026-03-27T21:00', 'Africa/Lagos') ?? '',
-      cutoffHours: 48,
+      cutoffHours: DEFAULT_CUTOFF_HOURS,
       auditTrail: [
         makeAuditEntry(
           'Tidehouse late close created to force overlap protection.',

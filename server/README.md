@@ -19,8 +19,43 @@ Important values:
 
 - `PORT`
 - `CLIENT_ORIGIN`
+- `DATABASE_URL`
 - `SESSION_SECRET`
 - `SESSION_COOKIE_SECURE`
+
+Example local Postgres connection:
+
+```txt
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/shift_sync?schema=public
+```
+
+## Prisma / PostgreSQL setup
+
+The Nest app now has a real Prisma-backed PostgreSQL layer.
+
+- Prisma config: `prisma.config.ts`
+- Schema: `prisma/schema.prisma`
+- Seed script: `prisma/seed.ts`
+- Generated client: `@prisma/client`
+- Nest Prisma service: `src/database/prisma.service.ts`
+
+Useful commands:
+
+```bash
+npm run db:generate
+npm run db:migrate -- --name init
+npm run db:seed
+npm run db:studio
+```
+
+The seed script mirrors the current mock domain:
+
+- demo users and roles
+- managed/certified locations
+- recurring availability and exceptions
+- seeded shifts and assignments
+- shift audit trail
+- coverage requests
 
 ## Seeded auth accounts
 
@@ -37,15 +72,26 @@ Examples:
 - `maya.manager@coastaleats.com`
 - seeded staff accounts in `src/auth/mock-users.ts`
 
-## Scheduling model
+## Runtime status
 
-The scheduling domain is intentionally in-memory for now.
+The database layer is configured and ready, but the current auth and scheduling services still read from the in-memory seed sources while we migrate endpoint logic incrementally.
 
-- Seed data lives in `src/scheduling/scheduling.data.ts`
-- Users live in `src/auth/mock-users.ts`
-- API logic lives in `src/scheduling/scheduling.service.ts`
+Current runtime sources:
 
-Restarting the server resets shifts and coverage requests back to the seeded state.
+- `src/scheduling/scheduling.data.ts`
+- `src/auth/mock-users.ts`
+
+Current database sources:
+
+- `prisma/schema.prisma`
+- `prisma/seed.ts`
+- `src/database/prisma.service.ts`
+
+That means:
+
+- Postgres is now set up inside the Nest app
+- the schema is ready for production-style persistence
+- the next migration step is swapping service methods from the in-memory store to Prisma queries
 
 ## Timezone handling
 
@@ -83,9 +129,31 @@ The current shift assignment flow enforces:
 Current coverage endpoints model:
 
 - swap and drop request boards
+- staff-created swap and drop requests
+- counterpart accept and reject flows
+- eligible staff claim flow for drops
+- requester withdraw flow before approval
+- max three active requests per requester
 - original assignment remains until final approval
 - pending coverage requests can be cancelled when a shift changes
 - expired drop handling inside the in-memory store
+
+## Operations, realtime, notifications, and audit
+
+The server now also exposes:
+
+- operations dashboard analytics for overtime, compliance, fairness, and on-duty-now
+- realtime SSE updates for schedule, coverage, dashboard, and notification invalidation
+- persisted in-memory notifications with read state and in-app preference controls
+- shift audit history plus admin audit export by date range and location
+
+Important implementation notes:
+
+- overtime and daily-hour checks split overnight shifts across the local calendar days they touch
+- weekly calculations follow the same Sunday-Saturday operational week used by the schedule board
+- 7th consecutive day assignments require a manager override reason before they can be committed
+- audit export stays role-gated: managers can inspect shift history, admins can export logs
+- realtime is intentionally transport-only; the frontend still uses TanStack Query as the source of truth after invalidation
 
 ## Main endpoints
 
@@ -95,6 +163,7 @@ Current coverage endpoints model:
 - `GET /api/users`
 - `GET /api/locations`
 - `GET /api/shifts/board`
+- `GET /api/shifts/:shiftId/eligible-staff`
 - `POST /api/shifts`
 - `PATCH /api/shifts/:shiftId`
 - `POST /api/shifts/:shiftId/assignments`
@@ -104,5 +173,23 @@ Current coverage endpoints model:
 - `POST /api/shifts/actions/publish-week`
 - `POST /api/shifts/actions/unpublish-week`
 - `GET /api/coverage/board`
+- `GET /api/coverage/shifts/:shiftId/options`
+- `POST /api/coverage/requests/swap`
+- `POST /api/coverage/requests/drop`
+- `POST /api/coverage/requests/:requestId/accept`
+- `POST /api/coverage/requests/:requestId/reject`
+- `POST /api/coverage/requests/:requestId/claim`
+- `POST /api/coverage/requests/:requestId/withdraw`
 - `POST /api/coverage/requests/:requestId/approve`
 - `POST /api/coverage/requests/:requestId/cancel`
+- `GET /api/operations/dashboard`
+- `GET /api/operations/fairness`
+- `GET /api/operations/on-duty-now`
+- `GET /api/notifications`
+- `GET /api/notifications/preferences`
+- `PATCH /api/notifications/preferences`
+- `PATCH /api/notifications/:notificationId/read`
+- `POST /api/notifications/actions/read-all`
+- `GET /api/events/stream`
+- `GET /api/audit/shifts/:shiftId`
+- `GET /api/audit/export`

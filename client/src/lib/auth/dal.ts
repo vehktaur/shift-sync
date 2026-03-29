@@ -10,11 +10,17 @@ import type { SessionResponse } from "@/types/auth";
 export const getCurrentSession = cache(async () => {
   const cookieStore = await cookies();
   const cookieHeader = cookieStore.toString();
-  const response = await fetch(`${getApiBaseUrl()}/auth/me`, {
-    method: "GET",
-    cache: "no-store",
-    headers: cookieHeader ? { cookie: cookieHeader } : undefined,
-  });
+  let response: Response;
+
+  try {
+    response = await fetch(`${getApiBaseUrl()}/auth/me`, {
+      method: "GET",
+      cache: "no-store",
+      headers: cookieHeader ? { cookie: cookieHeader } : undefined,
+    });
+  } catch {
+    return null;
+  }
 
   if (response.status === 401) {
     return null;

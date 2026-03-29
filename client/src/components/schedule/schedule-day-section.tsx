@@ -12,7 +12,7 @@ export function ScheduleDaySection({ group }: ScheduleDaySectionProps) {
     <section className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
         <Badge variant="secondary">{group.dayLabel}</Badge>
-        <p className="text-lg font-semibold tracking-tight">{group.dateLabel}</p>
+        <h2 className="text-lg font-semibold tracking-tight">{group.dateLabel}</h2>
       </div>
 
       <div className="grid gap-5 xl:grid-cols-2">

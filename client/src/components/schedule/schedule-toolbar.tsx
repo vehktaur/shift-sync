@@ -1,10 +1,17 @@
 import { PencilLine, Send } from "lucide-react";
+import { toast } from "sonner";
 
-import { useScheduleWorkspace } from "@/components/schedule/schedule-workspace";
 import type { ShiftFilter } from "@/components/schedule/schedule.utils";
 import { shiftFilters } from "@/components/schedule/schedule.utils";
+import { useScheduleBoardData } from "@/components/schedule/use-schedule-board-data";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  useLocations,
+  usePublishWeek,
+  useUnpublishWeek,
+} from "@/hooks/use-scheduling";
+import { getApiErrorMessage } from "@/lib/api/client";
 import {
   Select,
   SelectContent,
@@ -12,20 +19,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useScheduleStore } from "@/stores/schedule-store";
 
 export function ScheduleToolbar() {
-  const {
-    canManageBoard,
-    locationFilter,
-    publishWeek,
-    publishWeekLoading,
-    scheduleBoard,
-    setLocationFilter,
-    setShiftFilter,
-    shiftFilter,
-    unpublishWeek,
-    unpublishWeekLoading,
-  } = useScheduleWorkspace();
+  const locationFilter = useScheduleStore((state) => state.locationFilter);
+  const weekStartDate = useScheduleStore((state) => state.weekStartDate);
+  const setLocationFilter = useScheduleStore((state) => state.setLocationFilter);
+  const setShiftFilter = useScheduleStore((state) => state.setShiftFilter);
+  const shiftFilter = useScheduleStore((state) => state.shiftFilter);
+  const locationsQuery = useLocations();
+  const publishWeekMutation = usePublishWeek(weekStartDate);
+  const unpublishWeekMutation = useUnpublishWeek(weekStartDate);
+  const { canManageBoard, scheduleBoard } = useScheduleBoardData();
+  const locations = locationsQuery.data ?? [];
 
   if (!scheduleBoard) {
     return null;
@@ -40,7 +46,7 @@ export function ScheduleToolbar() {
               htmlFor="location-filter"
               className="text-xs font-semibold tracking-[0.18em] text-muted-foreground uppercase"
             >
-              Location
+              Location filter
             </label>
             <Select value={locationFilter} onValueChange={setLocationFilter}>
               <SelectTrigger id="location-filter">
@@ -48,7 +54,7 @@ export function ScheduleToolbar() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All locations</SelectItem>
-                {scheduleBoard.locations.map((location) => (
+                {locations.map((location) => (
                   <SelectItem key={location.id} value={location.id}>
                     {location.name}
                   </SelectItem>
@@ -62,7 +68,7 @@ export function ScheduleToolbar() {
               htmlFor="risk-filter"
               className="text-xs font-semibold tracking-[0.18em] text-muted-foreground uppercase"
             >
-              Filter
+              Shift view
             </label>
             <Select
               value={shiftFilter}
@@ -82,22 +88,43 @@ export function ScheduleToolbar() {
           </div>
         </div>
 
-        {canManageBoard ? (
+        {canManageBoard && (
           <div className="flex flex-wrap gap-3 xl:justify-end">
             <Button
               variant="outline"
-              loading={unpublishWeekLoading}
-              onClick={unpublishWeek}
+              loading={unpublishWeekMutation.isPending}
+              onClick={async () => {
+                try {
+                  await unpublishWeekMutation.mutateAsync();
+                  toast.success("Week moved to draft.");
+                } catch (error) {
+                  toast.error(
+                    getApiErrorMessage(error, "Unable to unpublish week."),
+                  );
+                }
+              }}
             >
               <PencilLine className="size-4" />
               Unpublish week
             </Button>
-            <Button loading={publishWeekLoading} onClick={publishWeek}>
+            <Button
+              loading={publishWeekMutation.isPending}
+              onClick={async () => {
+                try {
+                  await publishWeekMutation.mutateAsync();
+                  toast.success("Week published.");
+                } catch (error) {
+                  toast.error(
+                    getApiErrorMessage(error, "Unable to publish week."),
+                  );
+                }
+              }}
+            >
               <Send className="size-4" />
               Publish week
             </Button>
           </div>
-        ) : null}
+        )}
       </CardContent>
     </Card>
   );

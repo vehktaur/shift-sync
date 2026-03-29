@@ -52,13 +52,11 @@ export function LoginView() {
     },
     onError: (error) => {
       const message = getApiErrorMessage(error, "Unable to sign in.");
-      form.setError("root", { message });
       toast.error(message);
     },
   });
 
   const onSubmit: SubmitHandler<LoginFormValues> = (values) => {
-    form.clearErrors("root");
     loginMutation.mutate(values);
   };
 
@@ -67,7 +65,10 @@ export function LoginView() {
       <div className="mx-auto flex min-h-screen w-full max-w-4xl items-center justify-center p-5">
         <Card className="w-full max-w-136 border-white/70 bg-white/88 shadow-[0_2.5rem_7rem_-3rem_rgba(15,23,42,0.35)] backdrop-blur-md">
           <CardHeader className="gap-5 border-b border-border/60 bg-[linear-gradient(160deg,rgba(66,137,149,0.1),rgba(255,255,255,0.45)_58%,rgba(224,132,82,0.09))]">
-            <Badge variant="secondary" className="w-fit bg-primary/10 text-primary">
+            <Badge
+              variant="secondary"
+              className="w-fit bg-primary/10 text-primary"
+            >
               ShiftSync
             </Badge>
             <div className="space-y-2">
@@ -121,18 +122,11 @@ export function LoginView() {
                 />
               </FieldGroup>
 
-              <FieldError
-                errors={
-                  form.formState.errors.root
-                    ? [form.formState.errors.root]
-                    : undefined
-                }
-              />
-
               <Button
                 type="submit"
                 className="w-full"
                 loading={loginMutation.isPending}
+                size="lg"
               >
                 Sign In
               </Button>

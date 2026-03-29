@@ -10,21 +10,45 @@ import { DateTime } from 'luxon';
 
 import { getAllUsers, getUserById } from '../auth/mock-users';
 import type { SessionUser, User } from '../auth/auth.types';
+import { NotificationsService } from '../notifications/notifications.service';
+import { RealtimeService } from '../realtime/realtime.service';
+import {
+  DEFAULT_CUTOFF_HOURS,
+  OVERTIME_PREMIUM_RATE,
+  SHIFT_SKILLS,
+} from './scheduling.constants';
 import { schedulingStore } from './scheduling.data';
 import type {
-  AssignmentOptionResponse,
+  AuditExportEntryResponse,
+  AuditExportResponse,
+  AssignmentViolationResponse,
+  AssignmentViolationRule,
   CoverageActionResponse,
   CoverageBoardResponse,
+  CoverageRequestAction,
   CoverageRequestRecord,
+  CoverageRequestMutationBody,
+  CoverageRequestOptionsResponse,
   CoverageRequestResponse,
   CoverageRequestStep,
   CoverageRequestType,
+  CoverageRequestViewerRelation,
+  DashboardMetricResponse,
+  EligibleStaffResponse,
+  FairnessReportResponse,
+  FairnessStaffReportResponse,
+  LaborAlertResponse,
   LocationRecord,
-  PublishBlockerResponse,
+  NotificationType,
+  OnDutyLocationResponse,
+  OperationsDashboardResponse,
+  OvertimeAssignmentResponse,
   ScheduleLocationResponse,
   ScheduleStaffResponse,
   SchedulingBoardResponse,
   SchedulingViewer,
+  ShiftReferenceDataResponse,
+  ShiftAuditHistoryResponse,
   ShiftAuditRecord,
   ShiftMutationRequestBody,
   ShiftRecord,
@@ -37,15 +61,13 @@ type StaffRecord = Extract<User, { role: 'staff' }>;
 
 type AssignmentEvaluation = {
   status: 'available' | 'warning' | 'blocked';
+  code?: string;
   message?: string;
+  violatedRule?: AssignmentViolationRule;
   warnings: string[];
-  suggestions?: StaffSummaryResponse[];
+  suggestedStaff?: StaffSummaryResponse[];
   projectedWeeklyHours?: number;
 };
-
-const DEFAULT_CUTOFF_HOURS = 48;
-const DEFAULT_WEEK_DATE = '2026-03-30';
-const SHIFT_SKILLS = ['bartender', 'line cook', 'server', 'host'];
 
 const isStaffRecord = (user: User): user is StaffRecord =>
   user.role === 'staff';
@@ -84,6 +106,11 @@ const formatHours = (hours: number) => Math.round(hours * 10) / 10;
 
 @Injectable()
 export class SchedulingService {
+  constructor(
+    private readonly notificationsService: NotificationsService,
+    private readonly realtimeService: RealtimeService,
+  ) {}
+
   getLocations(viewer: SessionUser): ScheduleLocationResponse[] {
     const schedulingViewer = this.getSchedulingViewer(viewer);
     return this.getVisibleLocationsForViewer(schedulingViewer.record).map(
@@ -91,61 +118,259 @@ export class SchedulingService {
     );
   }
 
-  getSchedulingBoard(viewer: SessionUser): SchedulingBoardResponse {
+  getSchedulingBoard(
+    viewer: SessionUser,
+    requestedWeekStartDate?: string,
+  ): SchedulingBoardResponse {
     const schedulingViewer = this.getSchedulingViewer(viewer);
     this.expireCoverageRequests();
+    const boardWeek = this.resolveBoardWeek(requestedWeekStartDate);
 
-    const visibleLocations = this.getVisibleLocationsForViewer(
+    // Keep the board payload limited to week-variant schedule data. Stable
+    // reference data such as locations and skills are fetched separately.
+    const visibleShifts = this.getVisibleShiftsForWeek(
       schedulingViewer.record,
+      boardWeek,
     );
+    const shiftResponses = visibleShifts
+      .map((shift) => this.buildShiftResponse(shift))
+      .sort((left, right) => left.startsAtUtc.localeCompare(right.startsAtUtc));
+    return {
+      weekStartDate: boardWeek.weekStartDate,
+      weekEndDate: boardWeek.weekEndDate,
+      shifts: shiftResponses,
+    };
+  }
+
+  getShiftReferenceData(): ShiftReferenceDataResponse {
+    return {
+      skills: [...SHIFT_SKILLS],
+    };
+  }
+
+  getOperationsDashboard(
+    viewer: SessionUser,
+    requestedWeekStartDate?: string,
+  ): OperationsDashboardResponse {
+    const schedulingViewer = this.getSchedulingViewer(viewer);
+    const boardWeek = this.resolveBoardWeek(requestedWeekStartDate);
+    const visibleShifts = this.getVisibleShiftsForWeek(
+      schedulingViewer.record,
+      boardWeek,
+    );
+    const fairness = this.getFairnessReport(
+      viewer,
+      boardWeek.weekStartDate,
+      boardWeek.weekEndDate,
+    );
+    const overtimeAssignments =
+      this.getProjectedOvertimeAssignments(visibleShifts);
+    const laborAlerts = this.getLaborAlerts(visibleShifts);
+    const projectedOvertimePremiumCost = formatHours(
+      overtimeAssignments.reduce(
+        (total, assignment) => total + assignment.overtimePremiumCost,
+        0,
+      ),
+    );
+
+    return {
+      weekStartDate: boardWeek.weekStartDate,
+      weekEndDate: boardWeek.weekEndDate,
+      metrics: [
+        this.buildDashboardMetric(
+          'Projected premium',
+          `$${projectedOvertimePremiumCost.toFixed(2)}`,
+          overtimeAssignments.length > 0
+            ? `${overtimeAssignments.length} assignment${overtimeAssignments.length === 1 ? '' : 's'} are driving overtime right now.`
+            : 'No projected overtime premium in the visible week.',
+          overtimeAssignments.length > 0 ? 'warning' : 'success',
+        ),
+        this.buildDashboardMetric(
+          'Compliance alerts',
+          String(laborAlerts.length),
+          laborAlerts.length > 0
+            ? 'Warnings are active across daily hours, weekly hours, or consecutive-day limits.'
+            : 'No active compliance alerts in the visible week.',
+          laborAlerts.some((alert) => alert.severity === 'critical')
+            ? 'critical'
+            : laborAlerts.length > 0
+              ? 'warning'
+              : 'success',
+        ),
+        this.buildDashboardMetric(
+          'Fairness score',
+          `${fairness.fairnessScore}`,
+          `${fairness.underScheduledCount} under target, ${fairness.overScheduledCount} over target.`,
+          fairness.fairnessScore >= 80
+            ? 'success'
+            : fairness.fairnessScore >= 60
+              ? 'warning'
+              : 'critical',
+        ),
+        this.buildDashboardMetric(
+          'Premium assignments',
+          String(fairness.premiumShiftCount),
+          'Friday and Saturday evening assignments in the selected week.',
+          'default',
+        ),
+      ],
+      projectedOvertimePremiumCost,
+      overtimeAssignments,
+      laborAlerts,
+      fairness,
+      onDutyLocations: this.getOnDutyNow(viewer),
+    };
+  }
+
+  getFairnessReport(
+    viewer: SessionUser,
+    requestedStartDate?: string,
+    requestedEndDate?: string,
+  ): FairnessReportResponse {
+    const schedulingViewer = this.getSchedulingViewer(viewer);
+    const period = this.resolveDateRange(requestedStartDate, requestedEndDate);
     const visibleStaff = this.getVisibleStaffForViewer(schedulingViewer.record);
     const visibleShifts = this.getVisibleShiftsForViewer(
       schedulingViewer.record,
     );
-    const shiftResponses = visibleShifts
-      .map((shift) => this.buildShiftResponse(shift, schedulingViewer))
-      .sort((left, right) => left.startsAtUtc.localeCompare(right.startsAtUtc));
-
-    const weekDates = shiftResponses.map((shift) => shift.dayKey).sort();
-    const weekStartDate = weekDates[0] ?? DEFAULT_WEEK_DATE;
-    const weekEndDate = weekDates[weekDates.length - 1] ?? DEFAULT_WEEK_DATE;
-    const publishBlockers = shiftResponses
-      .filter(
-        (shift) =>
-          shift.openSlots > 0 ||
-          shift.state === 'blocked' ||
-          shift.state === 'pending',
+    const teamMembers = visibleStaff
+      .map((staff) =>
+        this.buildFairnessStaffReport(staff, visibleShifts, period),
       )
-      .map((shift) => this.toPublishBlocker(shift));
+      .sort((left, right) => left.staff.name.localeCompare(right.staff.name));
+    const premiumAssignments = teamMembers.reduce(
+      (total, member) => total + member.premiumShiftCount,
+      0,
+    );
+    const fairnessScore = this.calculateFairnessScore(teamMembers);
 
     return {
-      weekLabel: `Week of ${this.formatDateForRange(weekStartDate)} - ${this.formatDateForRange(
-        weekEndDate,
-      )}`,
-      weekStartDate,
-      weekEndDate,
-      publishCutoffHours: DEFAULT_CUTOFF_HOURS,
-      locations: visibleLocations.map((location) =>
-        this.toLocationResponse(location),
+      periodStartDate: period.startDate,
+      periodEndDate: period.endDate,
+      fairnessScore,
+      premiumShiftCount: premiumAssignments,
+      underScheduledCount: teamMembers.filter(
+        (member) => member.status === 'under',
+      ).length,
+      overScheduledCount: teamMembers.filter(
+        (member) => member.status === 'over',
+      ).length,
+      balancedCount: teamMembers.filter(
+        (member) => member.status === 'balanced',
+      ).length,
+      teamMembers,
+    };
+  }
+
+  getOnDutyNow(viewer: SessionUser, atUtc?: string): OnDutyLocationResponse[] {
+    const schedulingViewer = this.getSchedulingViewer(viewer);
+    const instant = atUtc
+      ? DateTime.fromISO(atUtc, { zone: 'utc' })
+      : DateTime.utc();
+
+    if (!instant.isValid) {
+      throw new BadRequestException('atUtc must be a valid ISO datetime.');
+    }
+
+    return this.getVisibleLocationsForViewer(schedulingViewer.record)
+      .map((location) => {
+        const activeShifts = this.getVisibleShiftsForViewer(
+          schedulingViewer.record,
+        ).filter((shift) => {
+          if (shift.locationId !== location.id) {
+            return false;
+          }
+
+          const startsAt = DateTime.fromISO(shift.startsAtUtc, { zone: 'utc' });
+          const endsAt = DateTime.fromISO(shift.endsAtUtc, { zone: 'utc' });
+          return startsAt <= instant && instant < endsAt;
+        });
+        const activeAssignments = activeShifts.flatMap((shift) =>
+          shift.assigneeIds
+            .map((staffId) => this.getStaffOrNull(staffId))
+            .filter((staff): staff is StaffRecord => Boolean(staff))
+            .map((staff) => buildStaffSummary(staff)),
+        );
+        const nextShift = this.getVisibleShiftsForViewer(
+          schedulingViewer.record,
+        )
+          .filter((shift) => shift.locationId === location.id)
+          .filter(
+            (shift) =>
+              DateTime.fromISO(shift.startsAtUtc, { zone: 'utc' }) > instant,
+          )
+          .sort((left, right) =>
+            left.startsAtUtc.localeCompare(right.startsAtUtc),
+          )[0];
+
+        return {
+          location: this.toLocationResponse(location),
+          activeAssignments,
+          status:
+            activeShifts.length > 0 ? 'live' : nextShift ? 'upcoming' : 'quiet',
+          nextShiftTimeLabel: nextShift
+            ? this.getShiftStartLocal(nextShift, location).toFormat(
+                'EEE h:mm a',
+              )
+            : undefined,
+        } satisfies OnDutyLocationResponse;
+      })
+      .sort((left, right) =>
+        left.location.name.localeCompare(right.location.name),
+      );
+  }
+
+  getShiftAuditHistory(
+    viewer: SessionUser,
+    shiftId: string,
+  ): ShiftAuditHistoryResponse {
+    const schedulingViewer = this.getSchedulingViewer(viewer);
+    const shift = this.getAccessibleShift(shiftId, schedulingViewer.record);
+    const location = this.getLocationById(shift.locationId);
+
+    return {
+      shiftId: shift.id,
+      shiftTitle: shift.title,
+      location: this.toLocationResponse(location),
+      entries: [...shift.auditTrail].sort((left, right) =>
+        right.atUtc.localeCompare(left.atUtc),
       ),
-      staffDirectory: visibleStaff
-        .map((staff) => this.toScheduleStaffResponse(staff))
-        .sort((left, right) => left.name.localeCompare(right.name)),
-      skills: [...SHIFT_SKILLS],
-      shifts: shiftResponses,
-      summary: {
-        totalShiftCount: shiftResponses.length,
-        openShiftCount: shiftResponses.filter((shift) => shift.openSlots > 0)
-          .length,
-        riskShiftCount: shiftResponses.filter(
-          (shift) => shift.state === 'warning' || shift.state === 'blocked',
-        ).length,
-        premiumShiftCount: shiftResponses.filter((shift) => shift.premium)
-          .length,
-        publishedShiftCount: shiftResponses.filter((shift) => shift.published)
-          .length,
+    };
+  }
+
+  exportAuditLog(
+    viewer: SessionUser,
+    requestedStartDate?: string,
+    requestedEndDate?: string,
+    locationId?: string,
+  ): AuditExportResponse {
+    const schedulingViewer = this.getSchedulingViewer(viewer);
+    const period = this.resolveDateRange(requestedStartDate, requestedEndDate);
+    const entries = this.getVisibleShiftsForViewer(schedulingViewer.record)
+      .filter((shift) => !locationId || shift.locationId === locationId)
+      .flatMap((shift) => {
+        const location = this.getLocationById(shift.locationId);
+        return shift.auditTrail
+          .filter((entry) => this.isAuditEntryInsideRange(entry, period))
+          .map(
+            (entry): AuditExportEntryResponse => ({
+              ...entry,
+              shiftId: shift.id,
+              shiftTitle: shift.title,
+              locationId: location.id,
+              locationName: location.name,
+            }),
+          );
+      })
+      .sort((left, right) => right.atUtc.localeCompare(left.atUtc));
+
+    return {
+      filters: {
+        startDate: period.startDate,
+        endDate: period.endDate,
+        locationId,
       },
-      publishBlockers,
+      entries,
     };
   }
 
@@ -160,34 +385,24 @@ export class SchedulingService {
       validated.locationId,
       schedulingViewer.record,
     );
-    const startsAtUtc = this.toUtcFromLocationLocal(
+    const shiftWindow = this.resolveShiftWindow(
       validated.startsAtLocal,
       location,
-    );
-    const endsAtUtc = this.toUtcFromLocationLocal(
       validated.endsAtLocal,
-      location,
     );
-
-    if (endsAtUtc <= startsAtUtc) {
-      throw new HttpException(
-        { message: 'Shift end must be after the shift start.' },
-        HttpStatus.BAD_REQUEST,
-      );
-    }
 
     const shift: ShiftRecord = {
       id: crypto.randomUUID(),
       title:
         validated.title ?? `${toTitleCase(validated.requiredSkill)} coverage`,
       locationId: location.id,
-      startsAtUtc: startsAtUtc.toUTC().toISO() ?? '',
-      endsAtUtc: endsAtUtc.toUTC().toISO() ?? '',
+      startsAtUtc: shiftWindow.startsAtUtc.toISO() ?? '',
+      endsAtUtc: shiftWindow.endsAtUtc.toISO() ?? '',
       requiredSkill: validated.requiredSkill,
       headcount: validated.headcount,
       assigneeIds: [],
       published: false,
-      premium: this.isPremiumShift(startsAtUtc.setZone(location.timeZone)),
+      premium: this.isPremiumShift(shiftWindow.startsAtLocal),
       createdByUserId: schedulingViewer.id,
       updatedByUserId: schedulingViewer.id,
       updatedAtUtc: DateTime.utc().toISO() ?? '',
@@ -202,7 +417,13 @@ export class SchedulingService {
     };
 
     schedulingStore.shifts.push(shift);
-    return this.buildShiftResponse(shift, schedulingViewer);
+    this.emitSchedulingChange({
+      locationIds: [location.id],
+      shiftId: shift.id,
+      notifyDashboard: true,
+    });
+
+    return this.buildShiftResponse(shift);
   }
 
   updateShift(
@@ -219,34 +440,23 @@ export class SchedulingService {
       validated.locationId,
       schedulingViewer.record,
     );
-    const startsAtUtc = this.toUtcFromLocationLocal(
+    const shiftWindow = this.resolveShiftWindow(
       validated.startsAtLocal,
       location,
-    );
-    const endsAtUtc = this.toUtcFromLocationLocal(
       validated.endsAtLocal,
-      location,
     );
-
-    if (endsAtUtc <= startsAtUtc) {
-      throw new HttpException(
-        { message: 'Shift end must be after the shift start.' },
-        HttpStatus.BAD_REQUEST,
-      );
-    }
 
     const before = this.getShiftAuditSnapshot(shift);
 
     shift.title = validated.title ?? shift.title;
     shift.locationId = location.id;
-    shift.startsAtUtc = startsAtUtc.toUTC().toISO() ?? '';
-    shift.endsAtUtc = endsAtUtc.toUTC().toISO() ?? '';
+    shift.startsAtUtc = shiftWindow.startsAtUtc.toISO() ?? '';
+    shift.endsAtUtc = shiftWindow.endsAtUtc.toISO() ?? '';
     shift.requiredSkill = validated.requiredSkill;
     shift.headcount = validated.headcount;
     shift.updatedByUserId = schedulingViewer.id;
     shift.updatedAtUtc = DateTime.utc().toISO() ?? '';
-    shift.premium = this.isPremiumShift(startsAtUtc.setZone(location.timeZone));
-    shift.seedContext = undefined;
+    shift.premium = this.isPremiumShift(shiftWindow.startsAtLocal);
     shift.assigneeIds = shift.assigneeIds.filter((staffId) => {
       const staff = this.getStaffOrNull(staffId);
       if (!staff) {
@@ -277,18 +487,33 @@ export class SchedulingService {
       'Shift edited before approval. Pending coverage request auto-cancelled.',
     );
 
-    return this.buildShiftResponse(shift, schedulingViewer);
+    this.notifyShiftMutation({
+      shift,
+      type: 'shift_changed',
+      title: 'Shift updated',
+      body: `${shift.title} at ${location.name} was updated.`,
+    });
+    this.emitSchedulingChange({
+      locationIds: [location.id],
+      shiftId: shift.id,
+      notifyCoverage: true,
+      notifyDashboard: true,
+    });
+
+    return this.buildShiftResponse(shift);
   }
 
   assignStaff(
     viewer: SessionUser,
     shiftId: string,
     staffId: string,
+    overrideReason?: string,
   ): ShiftResponse {
     const schedulingViewer = this.getSchedulingViewer(viewer);
     this.ensureManagerOrAdmin(schedulingViewer.record);
     const shift = this.getAccessibleShift(shiftId, schedulingViewer.record);
     this.ensureShiftEditable(shift);
+    const normalizedOverrideReason = overrideReason?.trim() ?? '';
     const staff = this.getVisibleStaffForViewer(schedulingViewer.record).find(
       (candidate) => candidate.id === staffId,
     );
@@ -300,14 +525,16 @@ export class SchedulingService {
     }
 
     if (shift.assigneeIds.includes(staff.id)) {
-      return this.buildShiftResponse(shift, schedulingViewer);
+      return this.buildShiftResponse(shift);
     }
 
     if (shift.assigneeIds.length >= shift.headcount) {
-      throw new HttpException(
-        { message: 'This shift is already filled to headcount.' },
-        HttpStatus.CONFLICT,
-      );
+      this.throwAssignmentViolation({
+        code: 'SHIFT_HEADCOUNT_FILLED',
+        message: 'This shift is already filled to headcount.',
+        violatedRule: 'required_headcount',
+        suggestedStaff: [],
+      });
     }
 
     const evaluation = this.evaluateStaffForShift(shift, staff, {
@@ -315,25 +542,67 @@ export class SchedulingService {
     });
 
     if (evaluation.status === 'blocked') {
-      throw new HttpException(
-        { message: evaluation.message ?? 'That assignment is blocked.' },
-        HttpStatus.CONFLICT,
-      );
+      if (
+        evaluation.violatedRule ===
+          'seventh_consecutive_day_override_required' &&
+        normalizedOverrideReason
+      ) {
+        evaluation.status = 'warning';
+        evaluation.warnings = [
+          ...evaluation.warnings,
+          `Manager override applied for a 7th consecutive day: ${normalizedOverrideReason}`,
+        ];
+      } else {
+        this.throwAssignmentViolation(
+          this.toAssignmentViolationResponse(evaluation),
+        );
+      }
     }
 
+    const before = this.getShiftAuditSnapshot(shift);
     shift.assigneeIds.push(staff.id);
     shift.updatedByUserId = schedulingViewer.id;
     shift.updatedAtUtc = DateTime.utc().toISO() ?? '';
-    shift.seedContext = undefined;
     shift.auditTrail.push(
       this.createAuditEntry(
         schedulingViewer,
         'shift.assignee_added',
-        `Assigned ${staff.name} to the shift.`,
+        normalizedOverrideReason
+          ? `Assigned ${staff.name} to the shift with a 7th-day override.`
+          : `Assigned ${staff.name} to the shift.`,
+        {
+          before,
+          after: this.getShiftAuditSnapshot(shift),
+        },
       ),
     );
 
-    return this.buildShiftResponse(shift, schedulingViewer);
+    const location = this.getLocationById(shift.locationId);
+    await this.notificationsService.createNotifications({
+      userIds: [staff.id],
+      type: 'shift_assigned',
+      title: 'New shift assigned',
+      body: `${shift.title} at ${location.name} now includes you.`,
+    });
+
+    if (evaluation.warnings.length > 0) {
+      await this.notificationsService.createNotifications({
+        userIds: this.getManagerAndAdminUserIdsForLocation(shift.locationId),
+        type: 'overtime_warning',
+        title: 'Assignment warning',
+        body: evaluation.warnings[0] ?? 'A compliance warning needs review.',
+      });
+    }
+
+    this.emitSchedulingChange({
+      locationIds: [shift.locationId],
+      shiftId: shift.id,
+      notifyCoverage: true,
+      notifyDashboard: true,
+      userIds: [staff.id],
+    });
+
+    return this.buildShiftResponse(shift);
   }
 
   removeAssignee(
@@ -347,7 +616,7 @@ export class SchedulingService {
     this.ensureShiftEditable(shift);
 
     if (!shift.assigneeIds.includes(staffId)) {
-      return this.buildShiftResponse(shift, schedulingViewer);
+      return this.buildShiftResponse(shift);
     }
 
     shift.assigneeIds = shift.assigneeIds.filter(
@@ -355,7 +624,6 @@ export class SchedulingService {
     );
     shift.updatedByUserId = schedulingViewer.id;
     shift.updatedAtUtc = DateTime.utc().toISO() ?? '';
-    shift.seedContext = undefined;
 
     const staff = this.getStaffOrNull(staffId);
     shift.auditTrail.push(
@@ -372,7 +640,25 @@ export class SchedulingService {
       'Shift staffing changed before approval. Pending coverage request auto-cancelled.',
     );
 
-    return this.buildShiftResponse(shift, schedulingViewer);
+    if (staff) {
+      const location = this.getLocationById(shift.locationId);
+      await this.notificationsService.createNotifications({
+        userIds: [staff.id],
+        type: 'shift_changed',
+        title: 'Shift assignment removed',
+        body: `You were removed from ${shift.title} at ${location.name}.`,
+      });
+    }
+
+    this.emitSchedulingChange({
+      locationIds: [shift.locationId],
+      shiftId: shift.id,
+      notifyCoverage: true,
+      notifyDashboard: true,
+      userIds: staff ? [staff.id] : undefined,
+    });
+
+    return this.buildShiftResponse(shift);
   }
 
   publishShift(viewer: SessionUser, shiftId: string): ShiftResponse {
@@ -380,7 +666,7 @@ export class SchedulingService {
     this.ensureManagerOrAdmin(schedulingViewer.record);
     const shift = this.getAccessibleShift(shiftId, schedulingViewer.record);
     this.ensureShiftEditable(shift);
-    this.assertShiftPublishReady(shift, schedulingViewer);
+    this.assertShiftPublishReady(shift);
 
     shift.published = true;
     shift.updatedByUserId = schedulingViewer.id;
@@ -393,7 +679,19 @@ export class SchedulingService {
       ),
     );
 
-    return this.buildShiftResponse(shift, schedulingViewer);
+    this.notifyShiftMutation({
+      shift,
+      type: 'schedule_published',
+      title: 'Schedule published',
+      body: `${shift.title} has been published to staff.`,
+    });
+    this.emitSchedulingChange({
+      locationIds: [shift.locationId],
+      shiftId: shift.id,
+      notifyDashboard: true,
+    });
+
+    return this.buildShiftResponse(shift);
   }
 
   unpublishShift(viewer: SessionUser, shiftId: string): ShiftResponse {
@@ -413,18 +711,35 @@ export class SchedulingService {
       ),
     );
 
-    return this.buildShiftResponse(shift, schedulingViewer);
+    this.notifyShiftMutation({
+      shift,
+      type: 'shift_changed',
+      title: 'Shift moved back to draft',
+      body: `${shift.title} is no longer published.`,
+    });
+    this.emitSchedulingChange({
+      locationIds: [shift.locationId],
+      shiftId: shift.id,
+      notifyDashboard: true,
+    });
+
+    return this.buildShiftResponse(shift);
   }
 
-  publishVisibleWeek(viewer: SessionUser): SchedulingBoardResponse {
+  publishVisibleWeek(
+    viewer: SessionUser,
+    requestedWeekStartDate?: string,
+  ): SchedulingBoardResponse {
     const schedulingViewer = this.getSchedulingViewer(viewer);
     this.ensureManagerOrAdmin(schedulingViewer.record);
+    const boardWeek = this.resolveBoardWeek(requestedWeekStartDate);
 
-    const visibleShifts = this.getVisibleShiftsForViewer(
+    const visibleShifts = this.getVisibleShiftsForWeek(
       schedulingViewer.record,
+      boardWeek,
     );
     const blockers = visibleShifts.filter(
-      (shift) => !this.isShiftPublishReady(shift, schedulingViewer),
+      (shift) => !this.isShiftPublishReady(shift),
     );
 
     if (blockers.length > 0) {
@@ -450,18 +765,34 @@ export class SchedulingService {
             'Published shift as part of the weekly publish action.',
           ),
         );
+        this.notifyShiftMutation({
+          shift,
+          type: 'schedule_published',
+          title: 'Schedule published',
+          body: `${shift.title} has been published to staff.`,
+        });
       }
     });
 
-    return this.getSchedulingBoard(viewer);
+    this.emitSchedulingChange({
+      locationIds: visibleShifts.map((shift) => shift.locationId),
+      notifyDashboard: true,
+    });
+
+    return this.getSchedulingBoard(viewer, boardWeek.weekStartDate);
   }
 
-  unpublishVisibleWeek(viewer: SessionUser): SchedulingBoardResponse {
+  unpublishVisibleWeek(
+    viewer: SessionUser,
+    requestedWeekStartDate?: string,
+  ): SchedulingBoardResponse {
     const schedulingViewer = this.getSchedulingViewer(viewer);
     this.ensureManagerOrAdmin(schedulingViewer.record);
+    const boardWeek = this.resolveBoardWeek(requestedWeekStartDate);
 
-    const editablePublishedShifts = this.getVisibleShiftsForViewer(
+    const editablePublishedShifts = this.getVisibleShiftsForWeek(
       schedulingViewer.record,
+      boardWeek,
     ).filter((shift) => shift.published && this.isShiftEditable(shift));
 
     if (editablePublishedShifts.length === 0) {
@@ -487,7 +818,12 @@ export class SchedulingService {
       );
     });
 
-    return this.getSchedulingBoard(viewer);
+    this.emitSchedulingChange({
+      locationIds: editablePublishedShifts.map((shift) => shift.locationId),
+      notifyDashboard: true,
+    });
+
+    return this.getSchedulingBoard(viewer, boardWeek.weekStartDate);
   }
 
   getCoverageBoard(viewer: SessionUser): CoverageBoardResponse {
@@ -505,18 +841,435 @@ export class SchedulingService {
 
     return {
       requests: visibleRequests,
-      summary: {
-        totalRequests: visibleRequests.length,
-        managerActionCount: visibleRequests.filter(
-          (request) => request.status === 'pending_manager',
-        ).length,
-        dropRequestCount: visibleRequests.filter(
-          (request) => request.type === 'drop',
-        ).length,
-        swapRequestCount: visibleRequests.filter(
-          (request) => request.type === 'swap',
-        ).length,
-      },
+    };
+  }
+
+  getCoverageRequestOptions(
+    viewer: SessionUser,
+    shiftId: string,
+  ): CoverageRequestOptionsResponse {
+    const schedulingViewer = this.getSchedulingViewer(viewer);
+    this.ensureStaff(schedulingViewer.record);
+
+    const shift = this.getAccessibleShift(shiftId, schedulingViewer.record);
+    this.ensureShiftAssignedToStaff(shift, schedulingViewer.id);
+    const requester = this.getStaffOrNull(schedulingViewer.id);
+
+    if (!requester) {
+      throw new NotFoundException('Requester could not be resolved.');
+    }
+
+    return {
+      shiftId: shift.id,
+      shiftTitle: shift.title,
+      requester: buildStaffSummary(requester),
+      eligibleSwapTargets: this.getEligibleCoverageCandidatesForShift(shift, [
+        schedulingViewer.id,
+        ...shift.assigneeIds,
+      ]),
+      eligibleDropClaimants: this.getEligibleCoverageCandidatesForShift(shift, [
+        schedulingViewer.id,
+        ...shift.assigneeIds,
+      ]),
+    };
+  }
+
+  createSwapRequest(
+    viewer: SessionUser,
+    body: CoverageRequestMutationBody,
+  ): CoverageActionResponse {
+    const schedulingViewer = this.getSchedulingViewer(viewer);
+    this.ensureStaff(schedulingViewer.record);
+
+    const shiftId = typeof body.shiftId === 'string' ? body.shiftId.trim() : '';
+    const counterpartUserId =
+      typeof body.counterpartUserId === 'string'
+        ? body.counterpartUserId.trim()
+        : '';
+    const note = typeof body.note === 'string' ? body.note.trim() : '';
+
+    if (!shiftId || !counterpartUserId) {
+      throw new BadRequestException(
+        'shiftId and counterpartUserId are required for a swap request.',
+      );
+    }
+
+    const shift = this.getAccessibleShift(shiftId, schedulingViewer.record);
+    this.ensureShiftAssignedToStaff(shift, schedulingViewer.id);
+    this.assertStaffCanCreateCoverageRequest(schedulingViewer.id, shift);
+
+    if (counterpartUserId === schedulingViewer.id) {
+      throw new BadRequestException(
+        'A swap counterpart must be another staff member.',
+      );
+    }
+
+    const counterpart = this.getStaffOrNull(counterpartUserId);
+
+    if (!counterpart) {
+      throw new NotFoundException('Counterpart staff member not found.');
+    }
+
+    if (shift.assigneeIds.includes(counterpart.id)) {
+      throw new BadRequestException(
+        'The selected counterpart is already assigned to this shift.',
+      );
+    }
+
+    this.assertStaffEligibleForCoverageShift(shift, counterpart, {
+      fallbackMessage: 'The selected counterpart is no longer eligible.',
+    });
+
+    const request: CoverageRequestRecord = {
+      id: crypto.randomUUID(),
+      type: 'swap',
+      shiftId: shift.id,
+      requestedByUserId: schedulingViewer.id,
+      counterpartUserId: counterpart.id,
+      status: 'pending_counterparty',
+      createdAtUtc: DateTime.utc().toISO() ?? '',
+      updatedAtUtc: DateTime.utc().toISO() ?? '',
+      expiresAtUtc: shift.startsAtUtc,
+      note:
+        note ||
+        `${schedulingViewer.name} requested a swap with ${counterpart.name}.`,
+    };
+
+    schedulingStore.coverageRequests.push(request);
+    shift.auditTrail.push(
+      this.createAuditEntry(
+        schedulingViewer,
+        'coverage.created',
+        `Created swap request for ${shift.title}.`,
+      ),
+    );
+
+    await this.notificationsService.createNotifications({
+      userIds: [counterpart.id],
+      type: 'coverage_request',
+      title: 'Swap request received',
+      body: `${schedulingViewer.name} asked to swap ${shift.title} with you.`,
+    });
+
+    this.emitSchedulingChange({
+      locationIds: [shift.locationId],
+      requestId: request.id,
+      shiftId: shift.id,
+      notifyCoverage: true,
+      userIds: [schedulingViewer.id, counterpart.id],
+    });
+
+    return {
+      success: true,
+      request: this.buildCoverageRequestResponse(request, schedulingViewer),
+    };
+  }
+
+  createDropRequest(
+    viewer: SessionUser,
+    body: CoverageRequestMutationBody,
+  ): CoverageActionResponse {
+    const schedulingViewer = this.getSchedulingViewer(viewer);
+    this.ensureStaff(schedulingViewer.record);
+
+    const shiftId = typeof body.shiftId === 'string' ? body.shiftId.trim() : '';
+    const note = typeof body.note === 'string' ? body.note.trim() : '';
+
+    if (!shiftId) {
+      throw new BadRequestException('shiftId is required for a drop request.');
+    }
+
+    const shift = this.getAccessibleShift(shiftId, schedulingViewer.record);
+    this.ensureShiftAssignedToStaff(shift, schedulingViewer.id);
+    this.assertStaffCanCreateCoverageRequest(schedulingViewer.id, shift);
+    this.assertDropWindowStillOpen(shift);
+
+    const request: CoverageRequestRecord = {
+      id: crypto.randomUUID(),
+      type: 'drop',
+      shiftId: shift.id,
+      requestedByUserId: schedulingViewer.id,
+      status: 'open',
+      createdAtUtc: DateTime.utc().toISO() ?? '',
+      updatedAtUtc: DateTime.utc().toISO() ?? '',
+      expiresAtUtc: this.getDropRequestExpiryUtc(shift),
+      note:
+        note ||
+        `${schedulingViewer.name} asked the team to cover ${shift.title}.`,
+    };
+
+    schedulingStore.coverageRequests.push(request);
+    shift.auditTrail.push(
+      this.createAuditEntry(
+        schedulingViewer,
+        'coverage.created',
+        `Created drop request for ${shift.title}.`,
+      ),
+    );
+
+    await this.notificationsService.createNotifications({
+      userIds: this.getEligibleCoverageCandidateUserIds(shift, [
+        schedulingViewer.id,
+        ...shift.assigneeIds,
+      ]),
+      type: 'coverage_request',
+      title: 'Open shift coverage request',
+      body: `${schedulingViewer.name} opened coverage for ${shift.title}.`,
+    });
+
+    this.emitSchedulingChange({
+      locationIds: [shift.locationId],
+      requestId: request.id,
+      shiftId: shift.id,
+      notifyCoverage: true,
+      userIds: [schedulingViewer.id],
+    });
+
+    return {
+      success: true,
+      request: this.buildCoverageRequestResponse(request, schedulingViewer),
+    };
+  }
+
+  acceptCoverageRequest(
+    viewer: SessionUser,
+    requestId: string,
+  ): CoverageActionResponse {
+    const schedulingViewer = this.getSchedulingViewer(viewer);
+    this.ensureStaff(schedulingViewer.record);
+    this.expireCoverageRequests();
+
+    const request = this.getCoverageRequestById(requestId);
+
+    if (request.type !== 'swap' || request.status !== 'pending_counterparty') {
+      throw new HttpException(
+        { message: 'Only pending swap requests can be accepted.' },
+        HttpStatus.CONFLICT,
+      );
+    }
+
+    if (request.counterpartUserId !== schedulingViewer.id) {
+      throw new ForbiddenException(
+        'Only the requested counterpart can accept this swap.',
+      );
+    }
+
+    const shift = this.getAccessibleShift(
+      request.shiftId,
+      schedulingViewer.record,
+    );
+    const counterpart = this.getStaffOrNull(schedulingViewer.id);
+
+    if (!counterpart) {
+      throw new NotFoundException('Counterpart could not be resolved.');
+    }
+
+    this.assertStaffEligibleForCoverageShift(shift, counterpart, {
+      fallbackMessage: 'You are no longer eligible for this swap.',
+    });
+
+    request.status = 'pending_manager';
+    request.updatedAtUtc = DateTime.utc().toISO() ?? '';
+    request.note = `${counterpart.name} accepted the swap.`;
+
+    await this.notificationsService.createNotifications({
+      userIds: this.getManagerAndAdminUserIdsForLocation(
+        shift.locationId,
+      ).concat([request.requestedByUserId]),
+      type: 'coverage_request',
+      title: 'Swap ready for approval',
+      body: `${counterpart.name} accepted a swap for ${shift.title}.`,
+    });
+
+    this.emitSchedulingChange({
+      locationIds: [shift.locationId],
+      requestId: request.id,
+      shiftId: shift.id,
+      notifyCoverage: true,
+      userIds: [request.requestedByUserId, schedulingViewer.id],
+    });
+
+    return {
+      success: true,
+      request: this.buildCoverageRequestResponse(request, schedulingViewer),
+    };
+  }
+
+  rejectCoverageRequest(
+    viewer: SessionUser,
+    requestId: string,
+  ): CoverageActionResponse {
+    const schedulingViewer = this.getSchedulingViewer(viewer);
+    this.ensureStaff(schedulingViewer.record);
+    this.expireCoverageRequests();
+
+    const request = this.getCoverageRequestById(requestId);
+
+    if (request.type !== 'swap' || request.status !== 'pending_counterparty') {
+      throw new HttpException(
+        { message: 'Only pending swap requests can be rejected.' },
+        HttpStatus.CONFLICT,
+      );
+    }
+
+    if (request.counterpartUserId !== schedulingViewer.id) {
+      throw new ForbiddenException(
+        'Only the requested counterpart can reject this swap.',
+      );
+    }
+
+    request.status = 'rejected';
+    request.updatedAtUtc = DateTime.utc().toISO() ?? '';
+    request.cancellationReason = `${schedulingViewer.name} declined the swap request.`;
+
+    const shift = this.getShiftById(request.shiftId);
+    await this.notificationsService.createNotifications({
+      userIds: [request.requestedByUserId],
+      type: 'coverage_resolved',
+      title: 'Swap request declined',
+      body: `${schedulingViewer.name} declined the swap for ${shift.title}.`,
+    });
+
+    this.emitSchedulingChange({
+      locationIds: [shift.locationId],
+      requestId: request.id,
+      shiftId: shift.id,
+      notifyCoverage: true,
+      userIds: [request.requestedByUserId, schedulingViewer.id],
+    });
+
+    return {
+      success: true,
+      request: this.buildCoverageRequestResponse(request, schedulingViewer),
+    };
+  }
+
+  claimCoverageRequest(
+    viewer: SessionUser,
+    requestId: string,
+  ): CoverageActionResponse {
+    const schedulingViewer = this.getSchedulingViewer(viewer);
+    this.ensureStaff(schedulingViewer.record);
+    this.expireCoverageRequests();
+
+    const request = this.getCoverageRequestById(requestId);
+
+    if (request.type !== 'drop' || request.status !== 'open') {
+      throw new HttpException(
+        { message: 'Only open drop requests can be claimed.' },
+        HttpStatus.CONFLICT,
+      );
+    }
+
+    if (request.requestedByUserId === schedulingViewer.id) {
+      throw new BadRequestException('You cannot claim your own drop request.');
+    }
+
+    const shift = this.getAccessibleShift(
+      request.shiftId,
+      schedulingViewer.record,
+    );
+    const claimant = this.getStaffOrNull(schedulingViewer.id);
+
+    if (!claimant) {
+      throw new NotFoundException('Claimant could not be resolved.');
+    }
+
+    this.assertStaffEligibleForCoverageShift(shift, claimant, {
+      fallbackMessage: 'You are no longer eligible to claim this shift.',
+    });
+
+    request.claimantUserId = claimant.id;
+    request.status = 'pending_manager';
+    request.updatedAtUtc = DateTime.utc().toISO() ?? '';
+    request.note = `${claimant.name} volunteered to cover this shift.`;
+
+    await this.notificationsService.createNotifications({
+      userIds: this.getManagerAndAdminUserIdsForLocation(
+        shift.locationId,
+      ).concat([request.requestedByUserId]),
+      type: 'coverage_request',
+      title: 'Coverage claim needs approval',
+      body: `${claimant.name} claimed ${shift.title}.`,
+    });
+
+    this.emitSchedulingChange({
+      locationIds: [shift.locationId],
+      requestId: request.id,
+      shiftId: shift.id,
+      notifyCoverage: true,
+      userIds: [request.requestedByUserId, claimant.id],
+    });
+
+    return {
+      success: true,
+      request: this.buildCoverageRequestResponse(request, schedulingViewer),
+    };
+  }
+
+  withdrawCoverageRequest(
+    viewer: SessionUser,
+    requestId: string,
+  ): CoverageActionResponse {
+    const schedulingViewer = this.getSchedulingViewer(viewer);
+    this.ensureStaff(schedulingViewer.record);
+    this.expireCoverageRequests();
+
+    const request = this.getCoverageRequestById(requestId);
+
+    if (request.requestedByUserId !== schedulingViewer.id) {
+      throw new ForbiddenException(
+        'Only the requester can withdraw this request.',
+      );
+    }
+
+    if (
+      request.status === 'approved' ||
+      request.status === 'expired' ||
+      request.status === 'cancelled' ||
+      request.status === 'rejected'
+    ) {
+      throw new HttpException(
+        { message: 'Resolved requests cannot be withdrawn.' },
+        HttpStatus.CONFLICT,
+      );
+    }
+
+    request.status = 'cancelled';
+    request.updatedAtUtc = DateTime.utc().toISO() ?? '';
+    request.cancellationReason =
+      'Requester withdrew the coverage request before final approval.';
+
+    const shift = this.getShiftById(request.shiftId);
+
+    const relatedUserIds = Array.from(
+      new Set(
+        [
+          request.counterpartUserId,
+          request.claimantUserId,
+          ...this.getManagerAndAdminUserIdsForLocation(shift.locationId),
+        ].filter((candidate): candidate is string => Boolean(candidate)),
+      ),
+    );
+
+    await this.notificationsService.createNotifications({
+      userIds: relatedUserIds,
+      type: 'coverage_resolved',
+      title: 'Coverage request withdrawn',
+      body: `${schedulingViewer.name} withdrew the request for ${shift.title}.`,
+    });
+
+    this.emitSchedulingChange({
+      locationIds: [shift.locationId],
+      requestId: request.id,
+      shiftId: shift.id,
+      notifyCoverage: true,
+      userIds: [schedulingViewer.id, ...relatedUserIds],
+    });
+
+    return {
+      success: true,
+      request: this.buildCoverageRequestResponse(request, schedulingViewer),
     };
   }
 
@@ -564,9 +1317,11 @@ export class SchedulingService {
     });
 
     if (evaluation.status === 'blocked') {
-      throw new HttpException(
-        { message: evaluation.message ?? 'Replacement is no longer eligible.' },
-        HttpStatus.CONFLICT,
+      this.throwAssignmentViolation(
+        this.toAssignmentViolationResponse(
+          evaluation,
+          'Replacement is no longer eligible.',
+        ),
       );
     }
 
@@ -579,8 +1334,6 @@ export class SchedulingService {
 
     shift.updatedByUserId = schedulingViewer.id;
     shift.updatedAtUtc = DateTime.utc().toISO() ?? '';
-    shift.seedContext =
-      shift.seedContext?.state === 'pending' ? undefined : shift.seedContext;
     shift.auditTrail.push(
       this.createAuditEntry(
         schedulingViewer,
@@ -593,6 +1346,37 @@ export class SchedulingService {
 
     request.status = 'approved';
     request.updatedAtUtc = DateTime.utc().toISO() ?? '';
+
+    await this.notificationsService.createNotifications({
+      userIds: Array.from(
+        new Set(
+          [
+            request.requestedByUserId,
+            request.counterpartUserId,
+            request.claimantUserId,
+          ].filter((candidate): candidate is string => Boolean(candidate)),
+        ),
+      ),
+      type: 'coverage_resolved',
+      title: 'Coverage approved',
+      body: `${shift.title} coverage has been approved.`,
+    });
+    this.emitSchedulingChange({
+      locationIds: [shift.locationId],
+      shiftId: shift.id,
+      requestId: request.id,
+      notifyCoverage: true,
+      notifyDashboard: true,
+      userIds: Array.from(
+        new Set(
+          [
+            request.requestedByUserId,
+            request.counterpartUserId,
+            request.claimantUserId,
+          ].filter((candidate): candidate is string => Boolean(candidate)),
+        ),
+      ),
+    });
 
     return {
       success: true,
@@ -609,7 +1393,12 @@ export class SchedulingService {
     const request = this.getCoverageRequestById(requestId);
     this.getAccessibleShift(request.shiftId, schedulingViewer.record);
 
-    if (request.status === 'approved' || request.status === 'expired') {
+    if (
+      request.status === 'approved' ||
+      request.status === 'expired' ||
+      request.status === 'cancelled' ||
+      request.status === 'rejected'
+    ) {
       throw new HttpException(
         { message: 'Resolved requests cannot be cancelled.' },
         HttpStatus.CONFLICT,
@@ -630,10 +1419,81 @@ export class SchedulingService {
       ),
     );
 
+    await this.notificationsService.createNotifications({
+      userIds: Array.from(
+        new Set(
+          [
+            request.requestedByUserId,
+            request.counterpartUserId,
+            request.claimantUserId,
+          ].filter((candidate): candidate is string => Boolean(candidate)),
+        ),
+      ),
+      type: 'coverage_resolved',
+      title: 'Coverage request cancelled',
+      body: `${shift.title} coverage request is no longer active.`,
+    });
+    this.emitSchedulingChange({
+      locationIds: [shift.locationId],
+      shiftId: shift.id,
+      requestId: request.id,
+      notifyCoverage: true,
+      notifyDashboard: true,
+      userIds: Array.from(
+        new Set(
+          [
+            request.requestedByUserId,
+            request.counterpartUserId,
+            request.claimantUserId,
+          ].filter((candidate): candidate is string => Boolean(candidate)),
+        ),
+      ),
+    });
+
     return {
       success: true,
       request: this.buildCoverageRequestResponse(request, schedulingViewer),
     };
+  }
+
+  getEligibleStaffForShift(
+    viewer: SessionUser,
+    shiftId: string,
+  ): EligibleStaffResponse[] {
+    const schedulingViewer = this.getSchedulingViewer(viewer);
+    const shift = this.getAccessibleShift(shiftId, schedulingViewer.record);
+
+    return this.getVisibleStaffForViewer(schedulingViewer.record)
+      .filter((staff) => !shift.assigneeIds.includes(staff.id))
+      .map((staff) => ({
+        staff,
+        evaluation: this.evaluateStaffForShift(shift, staff, {
+          ignoreShiftId: shift.id,
+          includeSuggestions: false,
+        }),
+      }))
+      .filter((entry) => entry.evaluation.status !== 'blocked')
+      .sort((left, right) => {
+        const warningDifference =
+          left.evaluation.warnings.length - right.evaluation.warnings.length;
+
+        if (warningDifference !== 0) {
+          return warningDifference;
+        }
+
+        const projectedHourDifference =
+          (left.evaluation.projectedWeeklyHours ?? 0) -
+          (right.evaluation.projectedWeeklyHours ?? 0);
+
+        if (projectedHourDifference !== 0) {
+          return projectedHourDifference;
+        }
+
+        return left.staff.name.localeCompare(right.staff.name);
+      })
+      .map(({ staff, evaluation }) =>
+        this.toEligibleStaffResponse(staff, evaluation),
+      );
   }
 
   private getSchedulingViewer(viewer: SessionUser): SchedulingViewer {
@@ -657,6 +1517,12 @@ export class SchedulingService {
     }
   }
 
+  private ensureStaff(viewer: User): asserts viewer is StaffRecord {
+    if (viewer.role !== 'staff') {
+      throw new ForbiddenException('This action requires staff access.');
+    }
+  }
+
   private toLocationResponse(
     location: LocationRecord,
   ): ScheduleLocationResponse {
@@ -670,7 +1536,6 @@ export class SchedulingService {
       region: location.region,
       country: location.country,
       addressLine: location.addressLine,
-      mapUrl: location.mapUrl,
       latitude: location.latitude,
       longitude: location.longitude,
     };
@@ -739,6 +1604,15 @@ export class SchedulingService {
     );
   }
 
+  private getVisibleShiftsForWeek(
+    viewer: User,
+    boardWeek: { weekStartDate: string; weekEndDate: string },
+  ) {
+    return this.getVisibleShiftsForViewer(viewer).filter((shift) =>
+      this.isShiftInsideBoardWeek(shift, boardWeek),
+    );
+  }
+
   private getAccessibleLocation(locationId: string, viewer: User) {
     const location = schedulingStore.locations.find(
       (item) => item.id === locationId,
@@ -803,6 +1677,494 @@ export class SchedulingService {
     return user && isStaffRecord(user) ? user : null;
   }
 
+  private ensureShiftAssignedToStaff(shift: ShiftRecord, staffId: string) {
+    if (!shift.assigneeIds.includes(staffId)) {
+      throw new ForbiddenException(
+        'Only assigned staff can open coverage requests for this shift.',
+      );
+    }
+  }
+
+  private getActiveCoverageRequestsForUser(userId: string) {
+    return schedulingStore.coverageRequests.filter(
+      (request) =>
+        request.requestedByUserId === userId &&
+        (request.status === 'pending_counterparty' ||
+          request.status === 'pending_manager' ||
+          request.status === 'open'),
+    );
+  }
+
+  private assertStaffCanCreateCoverageRequest(
+    staffId: string,
+    shift: ShiftRecord,
+  ) {
+    const activeRequests = this.getActiveCoverageRequestsForUser(staffId);
+
+    if (activeRequests.length >= 3) {
+      throw new HttpException(
+        {
+          message:
+            'Staff can only keep 3 active swap or drop requests at a time.',
+        },
+        HttpStatus.CONFLICT,
+      );
+    }
+
+    const existingRequest = schedulingStore.coverageRequests.find(
+      (request) =>
+        request.shiftId === shift.id &&
+        request.requestedByUserId === staffId &&
+        (request.status === 'pending_counterparty' ||
+          request.status === 'pending_manager' ||
+          request.status === 'open'),
+    );
+
+    if (existingRequest) {
+      throw new HttpException(
+        {
+          message:
+            'There is already an active coverage request for this shift.',
+        },
+        HttpStatus.CONFLICT,
+      );
+    }
+  }
+
+  private getDropRequestExpiryUtc(shift: ShiftRecord) {
+    return (
+      DateTime.fromISO(shift.startsAtUtc, { zone: 'utc' })
+        .minus({ hours: 24 })
+        .toISO() ?? ''
+    );
+  }
+
+  private assertDropWindowStillOpen(shift: ShiftRecord) {
+    const cutoff = DateTime.fromISO(this.getDropRequestExpiryUtc(shift), {
+      zone: 'utc',
+    });
+
+    if (DateTime.utc() >= cutoff) {
+      throw new HttpException(
+        {
+          message:
+            'Drop requests must be created at least 24 hours before the shift starts.',
+        },
+        HttpStatus.CONFLICT,
+      );
+    }
+  }
+
+  private assertStaffEligibleForCoverageShift(
+    shift: ShiftRecord,
+    staff: StaffRecord,
+    options?: { fallbackMessage?: string },
+  ) {
+    const evaluation = this.evaluateStaffForShift(shift, staff, {
+      ignoreShiftId: shift.id,
+    });
+
+    if (evaluation.status === 'blocked') {
+      this.throwAssignmentViolation(
+        this.toAssignmentViolationResponse(
+          evaluation,
+          options?.fallbackMessage ??
+            'That staff member is no longer eligible.',
+        ),
+      );
+    }
+
+    return evaluation;
+  }
+
+  private getEligibleCoverageCandidatesForShift(
+    shift: ShiftRecord,
+    excludedStaffIds: string[] = [],
+  ) {
+    const excludedIds = new Set(excludedStaffIds);
+
+    return getAllUsers()
+      .filter(isStaffRecord)
+      .filter((staff) => !excludedIds.has(staff.id))
+      .map((staff) => ({
+        staff,
+        evaluation: this.evaluateStaffForShift(shift, staff, {
+          ignoreShiftId: shift.id,
+          includeSuggestions: false,
+        }),
+      }))
+      .filter((entry) => entry.evaluation.status !== 'blocked')
+      .sort((left, right) => {
+        const warningGap =
+          left.evaluation.warnings.length - right.evaluation.warnings.length;
+
+        if (warningGap !== 0) {
+          return warningGap;
+        }
+
+        return (
+          (left.evaluation.projectedWeeklyHours ?? 0) -
+          (right.evaluation.projectedWeeklyHours ?? 0)
+        );
+      })
+      .map((entry) => buildStaffSummary(entry.staff));
+  }
+
+  private getEligibleCoverageCandidateUserIds(
+    shift: ShiftRecord,
+    excludedStaffIds: string[] = [],
+  ) {
+    return this.getEligibleCoverageCandidatesForShift(
+      shift,
+      excludedStaffIds,
+    ).map((staff) => staff.id);
+  }
+
+  private buildDashboardMetric(
+    label: string,
+    value: string,
+    description: string,
+    tone: DashboardMetricResponse['tone'],
+  ): DashboardMetricResponse {
+    return { label, value, description, tone };
+  }
+
+  private getManagerAndAdminUserIdsForLocation(locationId: string) {
+    return getAllUsers()
+      .filter((user) => {
+        if (user.role === 'admin') {
+          return true;
+        }
+
+        return (
+          user.role === 'manager' &&
+          user.managedLocationIds.includes(locationId)
+        );
+      })
+      .map((user) => user.id);
+  }
+
+  private notifyShiftMutation(params: {
+    shift: ShiftRecord;
+    type: NotificationType;
+    title: string;
+    body: string;
+  }) {
+    const impactedUserIds = params.shift.assigneeIds;
+
+    if (impactedUserIds.length === 0) {
+      return;
+    }
+
+    await this.notificationsService.createNotifications({
+      userIds: impactedUserIds,
+      type: params.type,
+      title: params.title,
+      body: params.body,
+    });
+  }
+
+  private emitSchedulingChange(params: {
+    locationIds: string[];
+    shiftId?: string;
+    requestId?: string;
+    notifyCoverage?: boolean;
+    notifyDashboard?: boolean;
+    userIds?: string[];
+  }) {
+    const locationIds = Array.from(new Set(params.locationIds));
+
+    this.realtimeService.publish({
+      topic: 'schedule.updated',
+      payload: {
+        shiftId: params.shiftId,
+        requestId: params.requestId,
+        locationIds,
+      },
+      visibility: {
+        locationIds,
+        userIds: params.userIds,
+      },
+    });
+
+    if (params.notifyCoverage) {
+      this.realtimeService.publish({
+        topic: 'coverage.updated',
+        payload: {
+          shiftId: params.shiftId,
+          requestId: params.requestId,
+          locationIds,
+        },
+        visibility: {
+          locationIds,
+          userIds: params.userIds,
+        },
+      });
+    }
+
+    if (params.notifyDashboard) {
+      this.realtimeService.publish({
+        topic: 'dashboard.updated',
+        payload: {
+          shiftId: params.shiftId,
+          requestId: params.requestId,
+          locationIds,
+        },
+        visibility: {
+          locationIds,
+          userIds: params.userIds,
+        },
+      });
+    }
+  }
+
+  private resolveShiftWindow(
+    startsAtLocalValue: string,
+    location: LocationRecord,
+    endsAtLocalValue: string,
+  ) {
+    // Managers compose shifts in restaurant-local time. If the end clock falls
+    // before the start clock, treat it as an overnight shift into the next day.
+    const startsAtLocal = DateTime.fromISO(startsAtLocalValue, {
+      zone: location.timeZone,
+    });
+    let endsAtLocal = DateTime.fromISO(endsAtLocalValue, {
+      zone: location.timeZone,
+    });
+
+    if (!startsAtLocal.isValid || !endsAtLocal.isValid) {
+      throw new HttpException(
+        { message: `Invalid local date/time supplied for ${location.name}.` },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    if (endsAtLocal <= startsAtLocal) {
+      endsAtLocal = endsAtLocal.plus({ days: 1 });
+    }
+
+    if (endsAtLocal <= startsAtLocal) {
+      throw new HttpException(
+        { message: 'Shift end must be after the shift start.' },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    return {
+      startsAtLocal,
+      endsAtLocal,
+      startsAtUtc: startsAtLocal.toUTC(),
+      endsAtUtc: endsAtLocal.toUTC(),
+    };
+  }
+
+  private resolveDateRange(
+    requestedStartDate?: string,
+    requestedEndDate?: string,
+  ) {
+    const fallbackWeek = this.resolveBoardWeek(requestedStartDate);
+    const startDate = requestedStartDate ?? fallbackWeek.weekStartDate;
+    const endDate = requestedEndDate ?? fallbackWeek.weekEndDate;
+    const start = DateTime.fromISO(startDate, { zone: 'utc' }).startOf('day');
+    const end = DateTime.fromISO(endDate, { zone: 'utc' }).endOf('day');
+
+    if (!start.isValid || !end.isValid || end < start) {
+      throw new BadRequestException(
+        'startDate and endDate must be valid ISO dates in ascending order.',
+      );
+    }
+
+    return {
+      startDate: start.toISODate() ?? '',
+      endDate: end.toISODate() ?? '',
+      start,
+      end,
+    };
+  }
+
+  private isAuditEntryInsideRange(
+    entry: ShiftAuditRecord,
+    period: ReturnType<SchedulingService['resolveDateRange']>,
+  ) {
+    const timestamp = DateTime.fromISO(entry.atUtc, { zone: 'utc' });
+    return timestamp >= period.start && timestamp <= period.end;
+  }
+
+  private buildFairnessStaffReport(
+    staff: StaffRecord,
+    visibleShifts: ShiftRecord[],
+    period: ReturnType<SchedulingService['resolveDateRange']>,
+  ): FairnessStaffReportResponse {
+    const assignedHours = formatHours(
+      visibleShifts
+        .filter((shift) => shift.assigneeIds.includes(staff.id))
+        .reduce((total, shift) => {
+          const location = this.getLocationById(shift.locationId);
+          return (
+            total +
+            this.getShiftHoursWithinLocalDateRange(
+              shift,
+              location,
+              period.startDate,
+              period.endDate,
+            )
+          );
+        }, 0),
+    );
+    const daysInPeriod = Math.max(
+      period.end.startOf('day').diff(period.start.startOf('day'), 'days').days +
+        1,
+      1,
+    );
+    const desiredHours = schedulingStore.desiredHoursByUserId[staff.id] ?? 0;
+    const targetHoursForPeriod = formatHours((desiredHours / 7) * daysInPeriod);
+    const desiredHoursDelta = formatHours(assignedHours - targetHoursForPeriod);
+    const premiumShiftCount = visibleShifts.filter((shift) => {
+      if (!shift.assigneeIds.includes(staff.id) || !shift.premium) {
+        return false;
+      }
+
+      const location = this.getLocationById(shift.locationId);
+      return (
+        this.getShiftHoursWithinLocalDateRange(
+          shift,
+          location,
+          period.startDate,
+          period.endDate,
+        ) > 0
+      );
+    }).length;
+    const pendingCoverageRequests = schedulingStore.coverageRequests.filter(
+      (request) =>
+        request.requestedByUserId === staff.id &&
+        (request.status === 'open' ||
+          request.status === 'pending_counterparty' ||
+          request.status === 'pending_manager'),
+    ).length;
+    const status =
+      desiredHoursDelta > 2
+        ? 'over'
+        : desiredHoursDelta < -2
+          ? 'under'
+          : 'balanced';
+
+    return {
+      staff: this.toScheduleStaffResponse(staff),
+      assignedHours,
+      targetHoursForPeriod,
+      desiredHoursDelta,
+      premiumShiftCount,
+      pendingCoverageRequests,
+      status,
+      note:
+        status === 'over'
+          ? `${staff.name} is currently over the requested target for the selected period.`
+          : status === 'under'
+            ? `${staff.name} is currently below the requested target for the selected period.`
+            : `${staff.name} is tracking close to their requested hours.`,
+    };
+  }
+
+  private calculateFairnessScore(teamMembers: FairnessStaffReportResponse[]) {
+    if (teamMembers.length === 0) {
+      return 100;
+    }
+
+    const premiumCounts = teamMembers.map((member) => member.premiumShiftCount);
+    const average =
+      premiumCounts.reduce((total, count) => total + count, 0) /
+      premiumCounts.length;
+    const variance =
+      premiumCounts.reduce(
+        (total, count) => total + (count - average) ** 2,
+        0,
+      ) / premiumCounts.length;
+
+    return Math.max(
+      0,
+      Math.min(100, Math.round(100 - Math.sqrt(variance) * 30)),
+    );
+  }
+
+  private getProjectedOvertimeAssignments(
+    shifts: ShiftRecord[],
+  ): OvertimeAssignmentResponse[] {
+    const entries = shifts
+      .flatMap((shift) => {
+        const location = this.getLocationById(shift.locationId);
+        return shift.assigneeIds.map((staffId) => {
+          const staff = this.getStaffOrNull(staffId);
+
+          if (!staff) {
+            return null;
+          }
+
+          const overtimeHoursAdded = this.getOvertimeHoursAddedByShift(
+            staff.id,
+            shift,
+            location,
+          );
+
+          if (overtimeHoursAdded <= 0) {
+            return null;
+          }
+
+          const response = this.buildShiftResponse(shift);
+
+          return {
+            shiftId: shift.id,
+            shiftTitle: shift.title,
+            staff: buildStaffSummary(staff),
+            location: {
+              id: location.id,
+              name: location.name,
+            },
+            timeLabel: response.timeLabel,
+            overtimeHoursAdded: formatHours(overtimeHoursAdded),
+            overtimePremiumCost: formatHours(
+              overtimeHoursAdded * OVERTIME_PREMIUM_RATE,
+            ),
+          } satisfies OvertimeAssignmentResponse;
+        });
+      })
+      .filter((entry): entry is OvertimeAssignmentResponse => Boolean(entry))
+      .sort(
+        (left, right) => right.overtimePremiumCost - left.overtimePremiumCost,
+      );
+
+    return entries;
+  }
+
+  private getLaborAlerts(shifts: ShiftRecord[]): LaborAlertResponse[] {
+    return shifts
+      .flatMap((shift) => {
+        const location = this.getLocationById(shift.locationId);
+        return shift.assigneeIds.flatMap((staffId) => {
+          const staff = this.getStaffOrNull(staffId);
+
+          if (!staff) {
+            return [];
+          }
+
+          const evaluation = this.evaluateStaffForShift(shift, staff, {
+            ignoreShiftId: shift.id,
+          });
+
+          return evaluation.warnings.map((warning) => ({
+            id: `${shift.id}:${staff.id}:${warning}`,
+            severity: (warning.includes('overtime')
+              ? 'critical'
+              : 'warning') as LaborAlertResponse['severity'],
+            message: warning,
+            shiftTitle: shift.title,
+            locationCode: location.code,
+            staff: buildStaffSummary(staff),
+          }));
+        });
+      })
+      .sort((left, right) => left.shiftTitle.localeCompare(right.shiftTitle));
+  }
+
   private validateShiftPayload(body: ShiftMutationRequestBody) {
     const title =
       typeof body.title === 'string' ? body.title.trim() : undefined;
@@ -861,25 +2223,7 @@ export class SchedulingService {
     };
   }
 
-  private toUtcFromLocationLocal(value: string, location: LocationRecord) {
-    // Shift forms submit local restaurant time; normalize once here so every
-    // downstream overlap, rest, and overtime check can run against UTC.
-    const dateTime = DateTime.fromISO(value, { zone: location.timeZone });
-
-    if (!dateTime.isValid) {
-      throw new HttpException(
-        { message: `Invalid local date/time supplied for ${location.name}.` },
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-
-    return dateTime.toUTC();
-  }
-
-  private buildShiftResponse(
-    shift: ShiftRecord,
-    viewer: SchedulingViewer,
-  ): ShiftResponse {
+  private buildShiftResponse(shift: ShiftRecord): ShiftResponse {
     const location = this.getLocationById(shift.locationId);
     const startLocal = this.getShiftStartLocal(shift, location);
     const endLocal = this.getShiftEndLocal(shift, location);
@@ -887,10 +2231,6 @@ export class SchedulingService {
       .map((staffId) => this.getStaffOrNull(staffId))
       .filter((staff): staff is StaffRecord => Boolean(staff))
       .map((staff) => buildStaffSummary(staff));
-    const visibleStaff = this.getVisibleStaffForViewer(viewer.record);
-    const assignmentOptions = visibleStaff
-      .map((staff) => this.toAssignmentOptionResponse(shift, staff))
-      .sort((left, right) => left.staff.name.localeCompare(right.staff.name));
     const openSlots = Math.max(shift.headcount - assignees.length, 0);
     const warningMessages = assignees.flatMap((assignee) => {
       const staff = this.getStaffOrNull(assignee.id);
@@ -906,13 +2246,21 @@ export class SchedulingService {
       openSlots > 0
         ? this.getSuggestedAlternatives(shift, shift.assigneeIds)
         : [];
+    const hasActiveCoverageRequest = this.hasActiveCoverageRequest(shift.id);
     const state = this.getShiftState({
-      shift,
       openSlots,
+      hasActiveCoverageRequest,
       warningMessages,
       suggestions,
     });
-    const note = this.getShiftNote({ shift, openSlots, state });
+    const statusSummary = this.getShiftStatusSummary({
+      shift,
+      openSlots,
+      state,
+      hasActiveCoverageRequest,
+      warningMessages,
+      suggestions,
+    });
 
     return {
       id: shift.id,
@@ -934,46 +2282,19 @@ export class SchedulingService {
       published: shift.published,
       canEdit: this.isShiftEditable(shift),
       state,
-      note,
-      explanation: shift.seedContext?.explanation,
-      projectedImpact: shift.seedContext?.projectedImpact,
-      suggestions:
-        shift.seedContext?.suggestions
-          ?.map((name) => this.findStaffSummaryByName(name))
-          .filter((summary): summary is StaffSummaryResponse =>
-            Boolean(summary),
-          ) ?? suggestions,
+      statusSummary,
+      suggestions,
       warningMessages: Array.from(new Set(warningMessages)),
-      assignmentOptions,
       auditCount: shift.auditTrail.length,
     };
   }
 
-  private toAssignmentOptionResponse(
-    shift: ShiftRecord,
+  private toEligibleStaffResponse(
     staff: StaffRecord,
-  ): AssignmentOptionResponse {
-    if (shift.assigneeIds.includes(staff.id)) {
-      return {
-        staff: this.toScheduleStaffResponse(staff),
-        status: 'assigned',
-      };
-    }
-
-    const evaluation = this.evaluateStaffForShift(shift, staff, {
-      ignoreShiftId: shift.id,
-    });
-
+    evaluation: AssignmentEvaluation,
+  ): EligibleStaffResponse {
     return {
       staff: this.toScheduleStaffResponse(staff),
-      status:
-        evaluation.status === 'blocked'
-          ? 'blocked'
-          : evaluation.status === 'warning'
-            ? 'warning'
-            : 'available',
-      message: evaluation.message,
-      suggestions: evaluation.suggestions,
       warningMessages: evaluation.warnings,
       projectedWeeklyHours: evaluation.projectedWeeklyHours,
     };
@@ -996,31 +2317,31 @@ export class SchedulingService {
         : this.getSuggestedAlternatives(shift, shift.assigneeIds, staff.id);
 
     if (!staff.skills.includes(shift.requiredSkill)) {
-      return {
-        status: 'blocked',
+      return this.buildBlockedAssignmentEvaluation({
+        code: 'ASSIGNMENT_SKILL_MISMATCH',
         message: `${staff.name} does not have the ${shift.requiredSkill} skill required for this shift.`,
-        warnings: [],
-        suggestions: getSuggestions(),
-      };
+        violatedRule: 'required_skill',
+        suggestedStaff: getSuggestions() ?? [],
+      });
     }
 
     if (!staff.certifiedLocationIds.includes(shift.locationId)) {
-      return {
-        status: 'blocked',
+      return this.buildBlockedAssignmentEvaluation({
+        code: 'ASSIGNMENT_LOCATION_CERTIFICATION_MISMATCH',
         message: `${staff.name} is not certified for ${location.name}.`,
-        warnings: [],
-        suggestions: getSuggestions(),
-      };
+        violatedRule: 'location_certification',
+        suggestedStaff: getSuggestions() ?? [],
+      });
     }
 
     const availabilityIssue = this.getAvailabilityIssue(staff, shift, location);
     if (availabilityIssue) {
-      return {
-        status: 'blocked',
+      return this.buildBlockedAssignmentEvaluation({
+        code: 'ASSIGNMENT_AVAILABILITY_CONFLICT',
         message: availabilityIssue,
-        warnings: [],
-        suggestions: getSuggestions(),
-      };
+        violatedRule: 'availability_window',
+        suggestedStaff: getSuggestions() ?? [],
+      });
     }
 
     for (const otherShift of otherShifts) {
@@ -1035,32 +2356,32 @@ export class SchedulingService {
       const proposedEnd = DateTime.fromISO(shift.endsAtUtc, { zone: 'utc' });
 
       if (overlaps(proposedStart, proposedEnd, otherStart, otherEnd)) {
-        return {
-          status: 'blocked',
+        return this.buildBlockedAssignmentEvaluation({
+          code: 'ASSIGNMENT_OVERLAP_CONFLICT',
           message: `${staff.name} is already assigned to ${otherShift.title} at ${otherLocation.name}, so this would double-book them.`,
-          warnings: [],
-          suggestions: getSuggestions(),
-        };
+          violatedRule: 'no_overlapping_shifts',
+          suggestedStaff: getSuggestions() ?? [],
+        });
       }
 
       const restAfterPrevious = proposedStart.diff(otherEnd, 'hours').hours;
       if (otherEnd <= proposedStart && restAfterPrevious < 10) {
-        return {
-          status: 'blocked',
+        return this.buildBlockedAssignmentEvaluation({
+          code: 'ASSIGNMENT_REST_VIOLATION',
           message: `${staff.name} needs a minimum 10-hour reset after ${otherShift.title}.`,
-          warnings: [],
-          suggestions: getSuggestions(),
-        };
+          violatedRule: 'minimum_rest_between_shifts',
+          suggestedStaff: getSuggestions() ?? [],
+        });
       }
 
       const restBeforeNext = otherStart.diff(proposedEnd, 'hours').hours;
       if (proposedEnd <= otherStart && restBeforeNext < 10) {
-        return {
-          status: 'blocked',
+        return this.buildBlockedAssignmentEvaluation({
+          code: 'ASSIGNMENT_REST_VIOLATION',
           message: `${staff.name} would not have the required 10-hour rest before ${otherShift.title}.`,
-          warnings: [],
-          suggestions: getSuggestions(),
-        };
+          violatedRule: 'minimum_rest_between_shifts',
+          suggestedStaff: getSuggestions() ?? [],
+        });
       }
     }
 
@@ -1070,14 +2391,14 @@ export class SchedulingService {
       location,
     );
     if (projectedDailyHours > 12) {
-      return {
-        status: 'blocked',
+      return this.buildBlockedAssignmentEvaluation({
+        code: 'ASSIGNMENT_DAILY_HOURS_LIMIT',
         message: `${staff.name} would reach ${formatHours(
           projectedDailyHours,
         )} hours on this local day, which exceeds the 12-hour hard block.`,
-        warnings: [],
-        suggestions: getSuggestions(),
-      };
+        violatedRule: 'daily_hours_hard_block',
+        suggestedStaff: getSuggestions() ?? [],
+      });
     }
 
     const consecutiveDays = this.getProjectedConsecutiveDays(
@@ -1086,12 +2407,12 @@ export class SchedulingService {
       location,
     );
     if (consecutiveDays >= 7) {
-      return {
-        status: 'blocked',
+      return this.buildBlockedAssignmentEvaluation({
+        code: 'ASSIGNMENT_SEVENTH_CONSECUTIVE_DAY',
         message: `${staff.name} would hit a 7th consecutive day, which requires a manager override flow that has not been used here.`,
-        warnings: [],
-        suggestions: getSuggestions(),
-      };
+        violatedRule: 'seventh_consecutive_day_override_required',
+        suggestedStaff: getSuggestions() ?? [],
+      });
     }
 
     const projectedWeeklyHours = this.getProjectedWeeklyHours(
@@ -1136,6 +2457,35 @@ export class SchedulingService {
       warnings,
       projectedWeeklyHours: formatHours(projectedWeeklyHours),
     };
+  }
+
+  private buildBlockedAssignmentEvaluation(
+    violation: AssignmentViolationResponse,
+  ): AssignmentEvaluation {
+    return {
+      status: 'blocked',
+      code: violation.code,
+      message: violation.message,
+      violatedRule: violation.violatedRule,
+      warnings: [],
+      suggestedStaff: violation.suggestedStaff,
+    };
+  }
+
+  private toAssignmentViolationResponse(
+    evaluation: AssignmentEvaluation,
+    fallbackMessage = 'That assignment is blocked.',
+  ): AssignmentViolationResponse {
+    return {
+      code: evaluation.code ?? 'ASSIGNMENT_CONSTRAINT_VIOLATION',
+      message: evaluation.message ?? fallbackMessage,
+      violatedRule: evaluation.violatedRule ?? 'assignment_constraint',
+      suggestedStaff: evaluation.suggestedStaff ?? [],
+    };
+  }
+
+  private throwAssignmentViolation(violation: AssignmentViolationResponse) {
+    throw new HttpException(violation, HttpStatus.CONFLICT);
   }
 
   private getAvailabilityIssue(
@@ -1239,18 +2589,23 @@ export class SchedulingService {
     proposedShift: ShiftRecord,
     location: LocationRecord,
   ) {
-    const targetDate = this.getShiftStartLocal(
-      proposedShift,
-      location,
-    ).toFormat('yyyy-MM-dd');
+    const dates = this.getShiftCoveredLocalDates(proposedShift, location);
 
-    return this.getAssignedShiftsForStaff(staffId, proposedShift.id)
-      .concat([proposedShift])
-      .filter((shift) => {
-        const localStart = this.getShiftStartLocal(shift, location);
-        return localStart.toFormat('yyyy-MM-dd') === targetDate;
-      })
-      .reduce((total, shift) => total + this.getShiftDurationHours(shift), 0);
+    return dates.reduce((highestHours, dateKey) => {
+      const projectedHours = this.getAssignedShiftsForStaff(
+        staffId,
+        proposedShift.id,
+      )
+        .concat([proposedShift])
+        .reduce((total, shift) => {
+          const shiftLocation = this.getLocationById(shift.locationId);
+          return (
+            total + this.getShiftHoursOnLocalDate(shift, shiftLocation, dateKey)
+          );
+        }, 0);
+
+      return Math.max(highestHours, projectedHours);
+    }, 0);
   }
 
   private getProjectedWeeklyHours(
@@ -1258,18 +2613,25 @@ export class SchedulingService {
     proposedShift: ShiftRecord,
     location: LocationRecord,
   ) {
-    const weekStart = this.getShiftStartLocal(proposedShift, location).startOf(
-      'week',
+    const weekStart = this.getOperationalWeekStart(
+      this.getShiftStartLocal(proposedShift, location),
     );
     const weekEnd = weekStart.plus({ days: 6 }).endOf('day');
 
     return this.getAssignedShiftsForStaff(staffId, proposedShift.id)
       .concat([proposedShift])
-      .filter((shift) => {
-        const localStart = this.getShiftStartLocal(shift, location);
-        return localStart >= weekStart && localStart <= weekEnd;
-      })
-      .reduce((total, shift) => total + this.getShiftDurationHours(shift), 0);
+      .reduce((total, shift) => {
+        const shiftLocation = this.getLocationById(shift.locationId);
+        return (
+          total +
+          this.getShiftHoursWithinLocalRange(
+            shift,
+            shiftLocation,
+            weekStart,
+            weekEnd,
+          )
+        );
+      }, 0);
   }
 
   private getProjectedConsecutiveDays(
@@ -1281,8 +2643,11 @@ export class SchedulingService {
       new Set(
         this.getAssignedShiftsForStaff(staffId, proposedShift.id)
           .concat([proposedShift])
-          .map((shift) =>
-            this.getShiftStartLocal(shift, location).toFormat('yyyy-MM-dd'),
+          .flatMap((shift) =>
+            this.getShiftCoveredLocalDates(
+              shift,
+              this.getLocationById(shift.locationId),
+            ),
           ),
       ),
     ).sort();
@@ -1316,11 +2681,124 @@ export class SchedulingService {
     );
   }
 
-  private getShiftDurationHours(shift: ShiftRecord) {
-    const startsAt = DateTime.fromISO(shift.startsAtUtc, { zone: 'utc' });
-    const endsAt = DateTime.fromISO(shift.endsAtUtc, { zone: 'utc' });
+  private getOvertimeHoursAddedByShift(
+    staffId: string,
+    proposedShift: ShiftRecord,
+    location: LocationRecord,
+  ) {
+    const weekStart = this.getOperationalWeekStart(
+      this.getShiftStartLocal(proposedShift, location),
+    );
+    const weekEnd = weekStart.plus({ days: 6 }).endOf('day');
+    const assignedHoursBefore = this.getAssignedShiftsForStaff(
+      staffId,
+      proposedShift.id,
+    ).reduce((total, shift) => {
+      const shiftLocation = this.getLocationById(shift.locationId);
+      return (
+        total +
+        this.getShiftHoursWithinLocalRange(
+          shift,
+          shiftLocation,
+          weekStart,
+          weekEnd,
+        )
+      );
+    }, 0);
+    const shiftHoursInsideWeek = this.getShiftHoursWithinLocalRange(
+      proposedShift,
+      location,
+      weekStart,
+      weekEnd,
+    );
 
-    return endsAt.diff(startsAt, 'hours').hours;
+    if (shiftHoursInsideWeek <= 0) {
+      return 0;
+    }
+
+    const regularCapacityRemaining = Math.max(40 - assignedHoursBefore, 0);
+    return Math.max(shiftHoursInsideWeek - regularCapacityRemaining, 0);
+  }
+
+  private getOperationalWeekStart(date: DateTime) {
+    return date.startOf('day').minus({ days: date.weekday % 7 });
+  }
+
+  private getShiftCoveredLocalDates(
+    shift: ShiftRecord,
+    location: LocationRecord,
+  ) {
+    const startLocal = this.getShiftStartLocal(shift, location);
+    const endLocal = this.getShiftEndLocal(shift, location);
+    const dates: string[] = [];
+    let cursor = startLocal.startOf('day');
+    const lastDay = endLocal.startOf('day');
+
+    while (cursor <= lastDay) {
+      dates.push(cursor.toISODate() ?? '');
+      cursor = cursor.plus({ days: 1 });
+    }
+
+    return dates;
+  }
+
+  private getShiftHoursOnLocalDate(
+    shift: ShiftRecord,
+    location: LocationRecord,
+    dateKey: string,
+  ) {
+    const dayStart = DateTime.fromISO(dateKey, {
+      zone: location.timeZone,
+    }).startOf('day');
+    const dayEnd = dayStart.endOf('day');
+
+    return this.getShiftHoursWithinLocalRange(
+      shift,
+      location,
+      dayStart,
+      dayEnd,
+    );
+  }
+
+  private getShiftHoursWithinLocalDateRange(
+    shift: ShiftRecord,
+    location: LocationRecord,
+    startDate: string,
+    endDate: string,
+  ) {
+    const rangeStart = DateTime.fromISO(startDate, {
+      zone: location.timeZone,
+    }).startOf('day');
+    const rangeEnd = DateTime.fromISO(endDate, {
+      zone: location.timeZone,
+    }).endOf('day');
+
+    return this.getShiftHoursWithinLocalRange(
+      shift,
+      location,
+      rangeStart,
+      rangeEnd,
+    );
+  }
+
+  private getShiftHoursWithinLocalRange(
+    shift: ShiftRecord,
+    location: LocationRecord,
+    rangeStart: DateTime,
+    rangeEnd: DateTime,
+  ) {
+    // Compliance, fairness, and audit exports all need the same "hours inside
+    // a local range" primitive so overnight shifts do not get double-counted.
+    const shiftStart = this.getShiftStartLocal(shift, location);
+    const shiftEnd = this.getShiftEndLocal(shift, location);
+    const boundedStart = shiftStart > rangeStart ? shiftStart : rangeStart;
+    const boundedEnd = shiftEnd < rangeEnd ? shiftEnd : rangeEnd;
+
+    if (boundedEnd <= boundedStart) {
+      return 0;
+    }
+
+    return boundedEnd.diff(boundedStart, 'hours').hours;
   }
 
   private getSuggestedAlternatives(
@@ -1358,18 +2836,18 @@ export class SchedulingService {
   }
 
   private getShiftState({
-    shift,
     openSlots,
+    hasActiveCoverageRequest,
     warningMessages,
     suggestions,
   }: {
-    shift: ShiftRecord;
     openSlots: number;
+    hasActiveCoverageRequest: boolean;
     warningMessages: string[];
     suggestions: StaffSummaryResponse[];
   }): ShiftState {
-    if (shift.seedContext?.state) {
-      return shift.seedContext.state;
+    if (hasActiveCoverageRequest) {
+      return 'pending';
     }
 
     if (openSlots > 0 && suggestions.length === 0) {
@@ -1387,21 +2865,31 @@ export class SchedulingService {
     return 'scheduled';
   }
 
-  private getShiftNote({
+  private getShiftStatusSummary({
     shift,
     openSlots,
     state,
+    hasActiveCoverageRequest,
+    warningMessages,
+    suggestions,
   }: {
     shift: ShiftRecord;
     openSlots: number;
     state: ShiftState;
+    hasActiveCoverageRequest: boolean;
+    warningMessages: string[];
+    suggestions: StaffSummaryResponse[];
   }) {
-    if (shift.seedContext?.note) {
-      return shift.seedContext.note;
+    if (hasActiveCoverageRequest) {
+      return 'Coverage request in progress.';
     }
 
-    if (state === 'pending') {
-      return 'A workflow request is still waiting on manager action.';
+    if (state === 'blocked' && openSlots > 0 && suggestions.length === 0) {
+      return 'No eligible staff found for the remaining open slots.';
+    }
+
+    if (state === 'warning' && warningMessages.length > 0) {
+      return warningMessages[0];
     }
 
     if (openSlots > 0) {
@@ -1415,22 +2903,8 @@ export class SchedulingService {
     return 'Fully staffed and ready to publish.';
   }
 
-  private toPublishBlocker(shift: ShiftResponse): PublishBlockerResponse {
-    return {
-      id: shift.id,
-      title: shift.title,
-      state: shift.state,
-      locationCode: shift.location.code,
-      timeLabel: shift.timeLabel,
-      reason: shift.explanation ?? shift.note,
-    };
-  }
-
-  private assertShiftPublishReady(
-    shift: ShiftRecord,
-    viewer: SchedulingViewer,
-  ) {
-    if (!this.isShiftPublishReady(shift, viewer)) {
+  private assertShiftPublishReady(shift: ShiftRecord) {
+    if (!this.isShiftPublishReady(shift)) {
       throw new HttpException(
         { message: 'This shift still has blockers and cannot be published.' },
         HttpStatus.CONFLICT,
@@ -1438,8 +2912,8 @@ export class SchedulingService {
     }
   }
 
-  private isShiftPublishReady(shift: ShiftRecord, viewer: SchedulingViewer) {
-    const response = this.buildShiftResponse(shift, viewer);
+  private isShiftPublishReady(shift: ShiftRecord) {
+    const response = this.buildShiftResponse(shift);
     return (
       response.openSlots === 0 &&
       response.state !== 'blocked' &&
@@ -1468,10 +2942,6 @@ export class SchedulingService {
     }
   }
 
-  private formatDateForRange(value: string) {
-    return DateTime.fromISO(value, { zone: 'utc' }).toFormat('MMM d');
-  }
-
   private formatTime(value: string) {
     const [hour = '00', minute = '00'] = value.split(':');
     return DateTime.fromObject({
@@ -1497,11 +2967,6 @@ export class SchedulingService {
       (startsAtLocal.weekday === 5 || startsAtLocal.weekday === 6) &&
       startsAtLocal.hour >= 18
     );
-  }
-
-  private findStaffSummaryByName(name: string) {
-    const user = getAllUsers().find((candidate) => candidate.name === name);
-    return user ? buildStaffSummary(user) : null;
   }
 
   private describeAvailability(staff: StaffRecord) {
@@ -1535,7 +3000,13 @@ export class SchedulingService {
         request.requestedByUserId === viewer.id ||
         request.counterpartUserId === viewer.id ||
         request.claimantUserId === viewer.id ||
-        shift.assigneeIds.includes(viewer.id)
+        shift.assigneeIds.includes(viewer.id) ||
+        (request.type === 'drop' &&
+          request.status === 'open' &&
+          this.getEligibleCoverageCandidateUserIds(shift, [
+            request.requestedByUserId,
+            ...shift.assigneeIds,
+          ]).includes(viewer.id))
       );
     }
 
@@ -1546,10 +3017,8 @@ export class SchedulingService {
     request: CoverageRequestRecord,
     viewer: SchedulingViewer,
   ): CoverageRequestResponse {
-    const shift = this.buildShiftResponse(
-      this.getShiftById(request.shiftId),
-      viewer,
-    );
+    const shiftRecord = this.getShiftById(request.shiftId);
+    const shift = this.buildShiftResponse(shiftRecord);
     const requestedBy = this.getStaffOrNull(request.requestedByUserId);
     const counterpart = request.counterpartUserId
       ? this.getStaffOrNull(request.counterpartUserId)
@@ -1557,12 +3026,15 @@ export class SchedulingService {
     const claimant = request.claimantUserId
       ? this.getStaffOrNull(request.claimantUserId)
       : null;
+    const viewerRelation = this.getCoverageViewerRelation(
+      viewer.record,
+      request,
+    );
 
     return {
       id: request.id,
       type: request.type,
       status: request.status,
-      statusLabel: this.getCoverageStatusLabel(request.status),
       expiresInLabel: this.getExpiresInLabel(request),
       note: request.cancellationReason ?? request.note,
       shift: {
@@ -1573,7 +3045,6 @@ export class SchedulingService {
         locationName: shift.location.name,
         locationCode: shift.location.code,
         timeZoneLabel: shift.location.timeZoneLabel,
-        mapUrl: shift.location.mapUrl,
       },
       requestedBy: requestedBy
         ? buildStaffSummary(requestedBy)
@@ -1585,15 +3056,25 @@ export class SchedulingService {
           },
       counterpart: counterpart ? buildStaffSummary(counterpart) : undefined,
       claimant: claimant ? buildStaffSummary(claimant) : undefined,
-      suggestedClaimants: this.getSuggestedAlternatives(
-        this.getShiftById(request.shiftId),
-        this.getShiftById(request.shiftId).assigneeIds,
+      suggestedClaimants: this.getEligibleCoverageCandidatesForShift(
+        shiftRecord,
+        [
+          request.requestedByUserId,
+          ...shiftRecord.assigneeIds,
+          request.counterpartUserId ?? '',
+          request.claimantUserId ?? '',
+        ],
       ),
       steps: this.getCoverageSteps(request.type, request.status),
       originalAssignmentRemains:
         request.status === 'pending_counterparty' ||
         request.status === 'pending_manager' ||
         request.status === 'open',
+      viewerRelation,
+      availableActions: this.getAvailableCoverageActions(
+        viewerRelation,
+        request,
+      ),
     };
   }
 
@@ -1619,6 +3100,24 @@ export class SchedulingService {
           { label: 'Assignments update', status: 'upcoming' },
         ];
       }
+
+      if (status === 'approved') {
+        return [
+          { label: 'Requester submitted swap', status: 'done' },
+          { label: 'Counterparty accepted', status: 'done' },
+          { label: 'Manager approval', status: 'done' },
+          { label: 'Assignments update', status: 'done' },
+        ];
+      }
+    }
+
+    if (status === 'open') {
+      return [
+        { label: 'Staff requested coverage', status: 'done' },
+        { label: 'Replacement identified', status: 'current' },
+        { label: 'Manager approval', status: 'upcoming' },
+        { label: 'Assignments update', status: 'upcoming' },
+      ];
     }
 
     if (status === 'pending_manager') {
@@ -1647,28 +3146,15 @@ export class SchedulingService {
     ];
   }
 
-  private getCoverageStatusLabel(status: CoverageRequestRecord['status']) {
-    switch (status) {
-      case 'pending_counterparty':
-        return 'Waiting on counterpart';
-      case 'pending_manager':
-        return 'Manager approval pending';
-      case 'open':
-        return 'Open for claim';
-      case 'approved':
-        return 'Approved';
-      case 'expired':
-        return 'Expired';
-      default:
-        return 'Cancelled';
-    }
-  }
-
   private getExpiresInLabel(request: CoverageRequestRecord) {
     const expiresAt = DateTime.fromISO(request.expiresAtUtc, { zone: 'utc' });
     const difference = expiresAt.diffNow(['days', 'hours']).toObject();
 
-    if (request.status === 'cancelled' || request.status === 'approved') {
+    if (
+      request.status === 'cancelled' ||
+      request.status === 'approved' ||
+      request.status === 'rejected'
+    ) {
       return 'Closed';
     }
 
@@ -1715,7 +3201,8 @@ export class SchedulingService {
 
       if (
         request.status !== 'pending_counterparty' &&
-        request.status !== 'pending_manager'
+        request.status !== 'pending_manager' &&
+        request.status !== 'open'
       ) {
         return;
       }
@@ -1733,6 +3220,91 @@ export class SchedulingService {
         'Cancelled pending coverage requests because the shift changed.',
       ),
     );
+  }
+
+  private hasActiveCoverageRequest(shiftId: string) {
+    return schedulingStore.coverageRequests.some(
+      (request) =>
+        request.shiftId === shiftId &&
+        (request.status === 'pending_counterparty' ||
+          request.status === 'pending_manager' ||
+          request.status === 'open'),
+    );
+  }
+
+  private getCoverageViewerRelation(
+    viewer: User,
+    request: CoverageRequestRecord,
+  ): CoverageRequestViewerRelation {
+    const shift = this.getShiftById(request.shiftId);
+
+    if (viewer.role !== 'staff') {
+      return 'manager';
+    }
+
+    if (request.requestedByUserId === viewer.id) {
+      return 'requester';
+    }
+
+    if (request.counterpartUserId === viewer.id) {
+      return 'counterpart';
+    }
+
+    if (request.claimantUserId === viewer.id) {
+      return 'claimant';
+    }
+
+    if (
+      request.type === 'drop' &&
+      request.status === 'open' &&
+      this.getEligibleCoverageCandidateUserIds(shift, [
+        request.requestedByUserId,
+        ...shift.assigneeIds,
+      ]).includes(viewer.id)
+    ) {
+      return 'eligible_claimant';
+    }
+
+    return 'observer';
+  }
+
+  private getAvailableCoverageActions(
+    viewerRelation: CoverageRequestViewerRelation,
+    request: CoverageRequestRecord,
+  ): CoverageRequestAction[] {
+    if (viewerRelation === 'manager' && request.status === 'pending_manager') {
+      return ['approve', 'cancel'];
+    }
+
+    if (viewerRelation === 'requester') {
+      if (
+        request.status === 'pending_counterparty' ||
+        request.status === 'pending_manager' ||
+        request.status === 'open'
+      ) {
+        return ['withdraw'];
+      }
+
+      return [];
+    }
+
+    if (
+      viewerRelation === 'counterpart' &&
+      request.type === 'swap' &&
+      request.status === 'pending_counterparty'
+    ) {
+      return ['accept', 'reject'];
+    }
+
+    if (
+      viewerRelation === 'eligible_claimant' &&
+      request.type === 'drop' &&
+      request.status === 'open'
+    ) {
+      return ['claim'];
+    }
+
+    return [];
   }
 
   private createAuditEntry(
@@ -1767,5 +3339,41 @@ export class SchedulingService {
       assigneeIds: [...shift.assigneeIds],
       published: shift.published,
     };
+  }
+
+  private resolveBoardWeek(requestedWeekStartDate?: string) {
+    const candidate = requestedWeekStartDate
+      ? DateTime.fromISO(requestedWeekStartDate, { zone: 'utc' })
+      : DateTime.utc();
+
+    if (!candidate.isValid) {
+      throw new HttpException(
+        { message: 'weekStart must be a valid ISO date.' },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    const normalizedWeekStart = candidate
+      .startOf('day')
+      .minus({ days: candidate.weekday % 7 });
+
+    return {
+      weekStartDate: normalizedWeekStart.toISODate() ?? '',
+      weekEndDate: normalizedWeekStart.plus({ days: 6 }).toISODate() ?? '',
+    };
+  }
+
+  private isShiftInsideBoardWeek(
+    shift: ShiftRecord,
+    boardWeek: { weekStartDate: string; weekEndDate: string },
+  ) {
+    const location = this.getLocationById(shift.locationId);
+    const shiftLocalDate =
+      this.getShiftStartLocal(shift, location).toISODate() ?? '';
+
+    return (
+      shiftLocalDate >= boardWeek.weekStartDate &&
+      shiftLocalDate <= boardWeek.weekEndDate
+    );
   }
 }

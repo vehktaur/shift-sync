@@ -164,14 +164,14 @@ const AppSidebar = () => {
                     </p>
                   </div>
                 </div>
-                {currentUser ? (
+                {currentUser && (
                   <Badge
                     variant="secondary"
-                    className="w-fit uppercase tracking-[0.18em] py-1 text-xs"
+                    className="w-fit uppercase tracking-[0.18em] px-1 py-0.5 text-[0.625rem]"
                   >
                     {currentUser.role}
                   </Badge>
-                ) : null}
+                )}
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem

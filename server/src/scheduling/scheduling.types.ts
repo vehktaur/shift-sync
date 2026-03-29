@@ -10,7 +10,6 @@ export type LocationRecord = {
   region: string;
   country: string;
   addressLine: string;
-  mapUrl: string;
   latitude: number;
   longitude: number;
 };
@@ -22,14 +21,6 @@ export type ShiftState =
   | 'blocked'
   | 'pending';
 
-export type ShiftSeedContext = {
-  state?: Extract<ShiftState, 'warning' | 'blocked' | 'pending'>;
-  note?: string;
-  explanation?: string;
-  projectedImpact?: string;
-  suggestions?: string[];
-};
-
 export type ShiftAuditRecord = {
   id: string;
   action:
@@ -39,6 +30,7 @@ export type ShiftAuditRecord = {
     | 'shift.unpublished'
     | 'shift.assignee_added'
     | 'shift.assignee_removed'
+    | 'coverage.created'
     | 'coverage.approved'
     | 'coverage.cancelled';
   actorUserId: string;
@@ -65,7 +57,6 @@ export type ShiftRecord = {
   updatedAtUtc: string;
   cutoffHours: number;
   forceCutoffPassed?: boolean;
-  seedContext?: ShiftSeedContext;
   auditTrail: ShiftAuditRecord[];
 };
 
@@ -76,6 +67,7 @@ export type CoverageRequestStatus =
   | 'pending_manager'
   | 'open'
   | 'approved'
+  | 'rejected'
   | 'cancelled'
   | 'expired';
 
@@ -94,11 +86,21 @@ export type CoverageRequestRecord = {
   cancellationReason?: string;
 };
 
-export type AssignmentOptionStatus =
-  | 'assigned'
-  | 'available'
-  | 'warning'
-  | 'blocked';
+export type CoverageRequestViewerRelation =
+  | 'requester'
+  | 'counterpart'
+  | 'claimant'
+  | 'manager'
+  | 'eligible_claimant'
+  | 'observer';
+
+export type CoverageRequestAction =
+  | 'approve'
+  | 'cancel'
+  | 'accept'
+  | 'reject'
+  | 'claim'
+  | 'withdraw';
 
 export type StaffSummaryResponse = {
   id: string;
@@ -117,7 +119,6 @@ export type ScheduleLocationResponse = {
   region: string;
   country: string;
   addressLine: string;
-  mapUrl: string;
   latitude: number;
   longitude: number;
 };
@@ -129,12 +130,9 @@ export type ScheduleStaffResponse = StaffSummaryResponse & {
   desiredHours: number;
 };
 
-export type AssignmentOptionResponse = {
+export type EligibleStaffResponse = {
   staff: ScheduleStaffResponse;
-  status: AssignmentOptionStatus;
-  message?: string;
-  suggestions?: StaffSummaryResponse[];
-  warningMessages?: string[];
+  warningMessages: string[];
   projectedWeeklyHours?: number;
 };
 
@@ -158,41 +156,20 @@ export type ShiftResponse = {
   published: boolean;
   canEdit: boolean;
   state: ShiftState;
-  note: string;
-  explanation?: string;
-  projectedImpact?: string;
+  statusSummary: string;
   suggestions?: StaffSummaryResponse[];
   warningMessages: string[];
-  assignmentOptions: AssignmentOptionResponse[];
   auditCount: number;
 };
 
-export type PublishBlockerResponse = {
-  id: string;
-  title: string;
-  state: ShiftState;
-  locationCode: string;
-  timeLabel: string;
-  reason: string;
-};
-
 export type SchedulingBoardResponse = {
-  weekLabel: string;
   weekStartDate: string;
   weekEndDate: string;
-  publishCutoffHours: number;
-  locations: ScheduleLocationResponse[];
-  staffDirectory: ScheduleStaffResponse[];
-  skills: string[];
   shifts: ShiftResponse[];
-  summary: {
-    totalShiftCount: number;
-    openShiftCount: number;
-    riskShiftCount: number;
-    premiumShiftCount: number;
-    publishedShiftCount: number;
-  };
-  publishBlockers: PublishBlockerResponse[];
+};
+
+export type ShiftReferenceDataResponse = {
+  skills: string[];
 };
 
 export type CoverageRequestStep = {
@@ -204,7 +181,6 @@ export type CoverageRequestResponse = {
   id: string;
   type: CoverageRequestType;
   status: CoverageRequestStatus;
-  statusLabel: string;
   expiresInLabel: string;
   note: string;
   shift: {
@@ -215,7 +191,6 @@ export type CoverageRequestResponse = {
     locationName: string;
     locationCode: string;
     timeZoneLabel: string;
-    mapUrl: string;
   };
   requestedBy: StaffSummaryResponse;
   counterpart?: StaffSummaryResponse;
@@ -223,16 +198,12 @@ export type CoverageRequestResponse = {
   suggestedClaimants: StaffSummaryResponse[];
   steps: CoverageRequestStep[];
   originalAssignmentRemains: boolean;
+  viewerRelation: CoverageRequestViewerRelation;
+  availableActions: CoverageRequestAction[];
 };
 
 export type CoverageBoardResponse = {
   requests: CoverageRequestResponse[];
-  summary: {
-    totalRequests: number;
-    managerActionCount: number;
-    dropRequestCount: number;
-    swapRequestCount: number;
-  };
 };
 
 export type ShiftMutationRequestBody = {
@@ -246,11 +217,221 @@ export type ShiftMutationRequestBody = {
 
 export type ShiftAssignmentRequestBody = {
   staffId?: string;
+  overrideReason?: string;
 };
 
 export type CoverageActionResponse = {
   success: true;
   request: CoverageRequestResponse;
+};
+
+export type CoverageRequestMutationBody = {
+  shiftId?: string;
+  counterpartUserId?: string;
+  note?: string;
+};
+
+export type CoverageRequestOptionsResponse = {
+  shiftId: string;
+  shiftTitle: string;
+  requester: StaffSummaryResponse;
+  eligibleSwapTargets: StaffSummaryResponse[];
+  eligibleDropClaimants: StaffSummaryResponse[];
+};
+
+export type DashboardMetricTone =
+  | 'default'
+  | 'warning'
+  | 'critical'
+  | 'success';
+
+export type DashboardMetricResponse = {
+  label: string;
+  value: string;
+  description: string;
+  tone: DashboardMetricTone;
+};
+
+export type OvertimeAssignmentResponse = {
+  shiftId: string;
+  shiftTitle: string;
+  staff: StaffSummaryResponse;
+  location: {
+    id: string;
+    name: string;
+  };
+  timeLabel: string;
+  overtimeHoursAdded: number;
+  overtimePremiumCost: number;
+};
+
+export type LaborAlertSeverity = 'warning' | 'critical';
+
+export type LaborAlertResponse = {
+  id: string;
+  severity: LaborAlertSeverity;
+  message: string;
+  shiftTitle: string;
+  locationCode: string;
+  staff: StaffSummaryResponse;
+};
+
+export type OnDutyLocationResponse = {
+  location: ScheduleLocationResponse;
+  activeAssignments: StaffSummaryResponse[];
+  status: 'live' | 'upcoming' | 'quiet';
+  nextShiftTimeLabel?: string;
+};
+
+export type FairnessStaffReportResponse = {
+  staff: ScheduleStaffResponse;
+  assignedHours: number;
+  targetHoursForPeriod: number;
+  desiredHoursDelta: number;
+  premiumShiftCount: number;
+  pendingCoverageRequests: number;
+  status: 'under' | 'balanced' | 'over';
+  note: string;
+};
+
+export type FairnessReportResponse = {
+  periodStartDate: string;
+  periodEndDate: string;
+  fairnessScore: number;
+  premiumShiftCount: number;
+  underScheduledCount: number;
+  overScheduledCount: number;
+  balancedCount: number;
+  teamMembers: FairnessStaffReportResponse[];
+};
+
+export type OperationsDashboardResponse = {
+  weekStartDate: string;
+  weekEndDate: string;
+  metrics: DashboardMetricResponse[];
+  projectedOvertimePremiumCost: number;
+  overtimeAssignments: OvertimeAssignmentResponse[];
+  laborAlerts: LaborAlertResponse[];
+  fairness: FairnessReportResponse;
+  onDutyLocations: OnDutyLocationResponse[];
+};
+
+export type NotificationType =
+  | 'shift_assigned'
+  | 'shift_changed'
+  | 'schedule_published'
+  | 'coverage_request'
+  | 'coverage_resolved'
+  | 'overtime_warning'
+  | 'availability_changed';
+
+export type NotificationPreferenceRecord = {
+  userId: string;
+  scheduleUpdates: boolean;
+  coverageUpdates: boolean;
+  overtimeWarnings: boolean;
+  availabilityUpdates: boolean;
+};
+
+export type NotificationRecord = {
+  id: string;
+  userId: string;
+  type: NotificationType;
+  title: string;
+  body: string;
+  readAtUtc?: string;
+  createdAtUtc: string;
+};
+
+export type NotificationResponse = {
+  id: string;
+  type: NotificationType;
+  title: string;
+  body: string;
+  read: boolean;
+  createdAtUtc: string;
+  createdAtLabel: string;
+};
+
+export type NotificationCenterResponse = {
+  unreadCount: number;
+  notifications: NotificationResponse[];
+};
+
+export type NotificationPreferencesResponse = {
+  scheduleUpdates: boolean;
+  coverageUpdates: boolean;
+  overtimeWarnings: boolean;
+  availabilityUpdates: boolean;
+};
+
+export type NotificationPreferencesUpdateBody = {
+  scheduleUpdates?: boolean;
+  coverageUpdates?: boolean;
+  overtimeWarnings?: boolean;
+  availabilityUpdates?: boolean;
+};
+
+export type ShiftAuditHistoryResponse = {
+  shiftId: string;
+  shiftTitle: string;
+  location: ScheduleLocationResponse;
+  entries: ShiftAuditRecord[];
+};
+
+export type AuditExportEntryResponse = ShiftAuditRecord & {
+  shiftId: string;
+  shiftTitle: string;
+  locationId: string;
+  locationName: string;
+};
+
+export type AuditExportResponse = {
+  filters: {
+    startDate: string;
+    endDate: string;
+    locationId?: string;
+  };
+  entries: AuditExportEntryResponse[];
+};
+
+export type RealtimeEventTopic =
+  | 'schedule.updated'
+  | 'coverage.updated'
+  | 'notifications.updated'
+  | 'dashboard.updated'
+  | 'heartbeat';
+
+export type RealtimeEventPayload = {
+  shiftId?: string;
+  requestId?: string;
+  locationIds?: string[];
+  notificationIds?: string[];
+};
+
+export type RealtimeEventResponse = {
+  id: string;
+  topic: RealtimeEventTopic;
+  createdAtUtc: string;
+  payload?: RealtimeEventPayload;
+};
+
+export type AssignmentViolationRule =
+  | 'assignment_constraint'
+  | 'required_skill'
+  | 'location_certification'
+  | 'availability_window'
+  | 'no_overlapping_shifts'
+  | 'minimum_rest_between_shifts'
+  | 'daily_hours_hard_block'
+  | 'seventh_consecutive_day_override_required'
+  | 'required_headcount';
+
+export type AssignmentViolationResponse = {
+  code: string;
+  message: string;
+  violatedRule: AssignmentViolationRule;
+  suggestedStaff: StaffSummaryResponse[];
 };
 
 export type SchedulingViewer = SessionUser & {

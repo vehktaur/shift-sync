@@ -1,3 +1,4 @@
+import { addDays, addWeeks, format, startOfWeek } from "date-fns";
 import axios from "axios";
 import { toast } from "sonner";
 import type { UseFormReturn } from "react-hook-form";
@@ -9,7 +10,6 @@ import type {
 } from "@/lib/schemas";
 import type { ApiErrorResponse } from "@/types/auth";
 import type {
-  AssignmentOptionResponse,
   ShiftResponse,
   ShiftState,
 } from "@/types/scheduling";
@@ -22,6 +22,26 @@ export const shiftFilters: Array<{ label: string; value: ShiftFilter }> = [
   { label: "Warnings", value: "risk" },
 ];
 
+export const getCurrentWeekStartDate = () =>
+  format(startOfWeek(new Date(), { weekStartsOn: 0 }), "yyyy-MM-dd");
+
+export const getAdjacentWeekStartDate = (
+  weekStartDate: string,
+  direction: -1 | 1,
+) => format(addWeeks(new Date(`${weekStartDate}T00:00:00`), direction), "yyyy-MM-dd");
+
+export const getWeekEndDate = (weekStartDate: string) =>
+  format(addDays(new Date(`${weekStartDate}T00:00:00`), 6), "yyyy-MM-dd");
+
+export const formatWeekRangeLabel = (
+  weekStartDate: string,
+  weekEndDate: string,
+) =>
+  `${format(new Date(`${weekStartDate}T00:00:00`), "MMM d")} - ${format(
+    new Date(`${weekEndDate}T00:00:00`),
+    "MMM d, yyyy",
+  )}`;
+
 export const shiftStateBadgeVariant: Record<
   ShiftState,
   "default" | "warning" | "critical" | "neutral" | "success"
@@ -33,25 +53,71 @@ export const shiftStateBadgeVariant: Record<
   pending: "neutral",
 };
 
-export const assignmentStatusVariant: Record<
-  AssignmentOptionResponse["status"],
-  "default" | "warning" | "critical" | "neutral" | "success"
-> = {
-  assigned: "success",
-  available: "default",
-  warning: "warning",
-  blocked: "critical",
+export const shiftStateLabels: Record<ShiftState, string> = {
+  scheduled: "Scheduled",
+  open: "Needs staff",
+  warning: "Needs review",
+  blocked: "Blocked",
+  pending: "Pending",
 };
 
-export const assignmentStatusOrder: Record<
-  AssignmentOptionResponse["status"],
-  number
-> = {
-  assigned: 0,
-  available: 1,
-  warning: 2,
-  blocked: 3,
+export const shiftStateDescriptions: Record<ShiftState, string> = {
+  scheduled: "This shift has enough staff and no active blockers.",
+  open: "This shift still needs staff before it is fully covered.",
+  warning: "This shift can proceed, but it has warnings you should review.",
+  blocked: "This shift has an issue that prevents a safe assignment or publish.",
+  pending: "This shift is waiting on a follow-up action before it is ready.",
 };
+
+export type ScheduleBoardSummary = {
+  totalShiftCount: number;
+  openShiftCount: number;
+  riskShiftCount: number;
+  premiumShiftCount: number;
+  publishedShiftCount: number;
+};
+
+export type PublishBlockerItem = {
+  id: string;
+  title: string;
+  state: ShiftState;
+  locationCode: string;
+  timeLabel: string;
+  reason: string;
+};
+
+export const buildScheduleBoardSummary = (
+  shifts: ShiftResponse[],
+): ScheduleBoardSummary => ({
+  totalShiftCount: shifts.length,
+  openShiftCount: shifts.filter((shift) => shift.openSlots > 0).length,
+  riskShiftCount: shifts.filter(
+    (shift) => shift.state === "warning" || shift.state === "blocked",
+  ).length,
+  premiumShiftCount: shifts.filter((shift) => shift.premium).length,
+  publishedShiftCount: shifts.filter((shift) => shift.published).length,
+});
+
+// The board endpoint stays week-scoped and lean, so UI aggregates are derived
+// locally from the visible shifts instead of being duplicated in the payload.
+export const buildPublishBlockers = (
+  shifts: ShiftResponse[],
+): PublishBlockerItem[] =>
+  shifts
+    .filter(
+      (shift) =>
+        shift.openSlots > 0 ||
+        shift.state === "blocked" ||
+        shift.state === "pending",
+    )
+    .map((shift) => ({
+      id: shift.id,
+      title: shift.title,
+      state: shift.state,
+      locationCode: shift.location.code,
+      timeLabel: shift.timeLabel,
+      reason: shift.statusSummary,
+    }));
 
 export const buildDefaultShiftValues = ({
   defaultLocationId,

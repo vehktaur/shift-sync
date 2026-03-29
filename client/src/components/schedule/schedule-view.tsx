@@ -7,18 +7,21 @@ import { ScheduleLocationGrid } from "@/components/schedule/schedule-location-gr
 import { ScheduleSkeleton } from "@/components/schedule/schedule-skeleton";
 import { ShiftComposerDialog } from "@/components/schedule/shift-composer-dialog";
 import { ScheduleToolbar } from "@/components/schedule/schedule-toolbar";
-import {
-  ScheduleWorkspaceProvider,
-  useScheduleWorkspace,
-} from "@/components/schedule/schedule-workspace";
+import { useScheduleBoardData } from "@/components/schedule/use-schedule-board-data";
 import { MetricCard } from "@/components/shared/metric-card";
 import { QueryErrorState } from "@/components/shared/query-error-state";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-
-function ScheduleViewContent() {
-  const { groupedShifts, isError, isLoading, retry, scheduleBoard } =
-    useScheduleWorkspace();
+export function ScheduleView() {
+  const {
+    groupedShifts,
+    isError,
+    isLoading,
+    retry,
+    scheduleBoard,
+    scheduleSummary,
+  } =
+    useScheduleBoardData();
 
   if (isLoading) {
     return <ScheduleSkeleton />;
@@ -42,23 +45,23 @@ function ScheduleViewContent() {
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard
           label="Total shifts"
-          value={String(scheduleBoard.summary.totalShiftCount)}
+          value={String(scheduleSummary.totalShiftCount)}
           description="Visible this week."
         />
         <MetricCard
           label="Open coverage"
-          value={String(scheduleBoard.summary.openShiftCount)}
+          value={String(scheduleSummary.openShiftCount)}
           description="Still missing staff."
         />
         <MetricCard
           label="Warnings"
-          value={String(scheduleBoard.summary.riskShiftCount)}
+          value={String(scheduleSummary.riskShiftCount)}
           description="Blocked or flagged shifts."
         />
         <MetricCard
           label="Published"
-          value={String(scheduleBoard.summary.publishedShiftCount)}
-          description="Visible to staff."
+          value={String(scheduleSummary.publishedShiftCount)}
+          description="Published this week."
         />
       </div>
 
@@ -72,8 +75,11 @@ function ScheduleViewContent() {
             <Badge variant="outline" className="w-fit">
               No shifts
             </Badge>
-            <p className="text-lg font-semibold tracking-tight">
+            <h2 className="text-lg font-semibold tracking-tight">
               No shifts match the current filters.
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Try another week or clear the current filters.
             </p>
           </CardContent>
         </Card>
@@ -85,13 +91,5 @@ function ScheduleViewContent() {
 
       <ShiftComposerDialog />
     </div>
-  );
-}
-
-export function ScheduleView() {
-  return (
-    <ScheduleWorkspaceProvider>
-      <ScheduleViewContent />
-    </ScheduleWorkspaceProvider>
   );
 }

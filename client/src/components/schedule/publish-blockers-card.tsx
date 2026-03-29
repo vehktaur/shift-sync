@@ -1,4 +1,3 @@
-import { useScheduleWorkspace } from "@/components/schedule/schedule-workspace";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -7,12 +6,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { useScheduleBoardData } from "@/components/schedule/use-schedule-board-data";
 
 import { shiftStateBadgeVariant } from "./schedule.utils";
 
 export function PublishBlockersCard() {
-  const { scheduleBoard } = useScheduleWorkspace();
-  const blockers = scheduleBoard?.publishBlockers ?? [];
+  const { publishBlockers } = useScheduleBoardData();
+  const blockers = publishBlockers;
 
   if (blockers.length === 0) {
     return null;
@@ -41,9 +41,9 @@ export function PublishBlockersCard() {
               <Badge variant="outline">{blocker.timeLabel}</Badge>
             </div>
             <div className="space-y-1">
-              <p className="text-sm font-semibold text-foreground">
+              <h3 className="text-sm font-semibold text-foreground">
                 {blocker.title}
-              </p>
+              </h3>
               <p className="text-sm leading-6 text-muted-foreground">
                 {blocker.reason}
               </p>

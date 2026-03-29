@@ -1,0 +1,253 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  admin
+  manager
+  staff
+}
+
+enum AccessScope {
+  all_locations
+}
+
+enum DayOfWeek {
+  monday
+  tuesday
+  wednesday
+  thursday
+  friday
+  saturday
+  sunday
+}
+
+enum ShiftState {
+  scheduled
+  open
+  warning
+  blocked
+  pending
+}
+
+enum CoverageRequestType {
+  swap
+  drop
+}
+
+enum CoverageRequestStatus {
+  pending_counterparty
+  pending_manager
+  open
+  rejected
+  approved
+  cancelled
+  expired
+}
+
+enum NotificationType {
+  shift_assigned
+  shift_changed
+  schedule_published
+  coverage_request
+  coverage_resolved
+  overtime_warning
+  availability_changed
+}
+
+model User {
+  id                    String                  @id
+  name                  String
+  email                 String                  @unique
+  role                  UserRole
+  accessScope           AccessScope?
+  desiredHours          Int?
+  demoPassword          String?
+  staffSkills           String[]                @default([])
+  permissions           String[]                @default([])
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+  managedLocations      ManagerLocation[]
+  certifiedLocations    StaffLocationCertification[]
+  recurringAvailability RecurringAvailability[]
+  availabilityExceptions AvailabilityException[]
+  createdShifts         Shift[]                 @relation("ShiftCreatedBy")
+  updatedShifts         Shift[]                 @relation("ShiftUpdatedBy")
+  shiftAssignments      ShiftAssignment[]
+  requestedCoverage     CoverageRequest[]       @relation("CoverageRequestedBy")
+  counterpartCoverage   CoverageRequest[]       @relation("CoverageCounterpart")
+  claimantCoverage      CoverageRequest[]       @relation("CoverageClaimant")
+  shiftAudits           ShiftAudit[]
+  notifications         Notification[]
+  notificationPreference NotificationPreference?
+}
+
+model Location {
+  id           String                       @id
+  name         String
+  code         String                       @unique
+  timeZone     String
+  timeZoneLabel String
+  city         String
+  region       String
+  country      String
+  addressLine  String
+  latitude     Decimal                      @db.Decimal(10, 7)
+  longitude    Decimal                      @db.Decimal(10, 7)
+  createdAt    DateTime                     @default(now())
+  updatedAt    DateTime                     @updatedAt
+  managers     ManagerLocation[]
+  certifications StaffLocationCertification[]
+  shifts       Shift[]
+}
+
+model ManagerLocation {
+  userId     String
+  locationId String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@id([userId, locationId])
+}
+
+model StaffLocationCertification {
+  userId       String
+  locationId   String
+  certifiedAt  DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  location     Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@id([userId, locationId])
+}
+
+model RecurringAvailability {
+  id        String    @id @default(uuid())
+  userId    String
+  dayOfWeek DayOfWeek
+  startTime String
+  endTime   String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, dayOfWeek])
+}
+
+model AvailabilityException {
+  id          String                      @id @default(uuid())
+  userId      String
+  date        DateTime                    @db.Date
+  isAvailable Boolean
+  user        User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  windows     AvailabilityExceptionWindow[]
+
+  @@index([userId, date])
+}
+
+model AvailabilityExceptionWindow {
+  id              String                @id @default(uuid())
+  exceptionId     String
+  startTime       String
+  endTime         String
+  availabilityException AvailabilityException @relation(fields: [exceptionId], references: [id], onDelete: Cascade)
+}
+
+model Shift {
+  id                  String              @id
+  title               String
+  locationId          String
+  startsAtUtc         DateTime            @db.Timestamptz(6)
+  endsAtUtc           DateTime            @db.Timestamptz(6)
+  requiredSkill       String
+  headcount           Int
+  published           Boolean
+  premium             Boolean
+  cutoffHours         Int
+  forceCutoffPassed   Boolean             @default(false)
+  createdByUserId     String
+  updatedByUserId     String
+  updatedAtUtc        DateTime            @db.Timestamptz(6)
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  location            Location            @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  createdBy           User                @relation("ShiftCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  updatedBy           User                @relation("ShiftUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: Restrict)
+  assignments         ShiftAssignment[]
+  audits              ShiftAudit[]
+  coverageRequests    CoverageRequest[]
+
+  @@index([locationId, startsAtUtc])
+}
+
+model ShiftAssignment {
+  shiftId     String
+  userId      String
+  assignedAt  DateTime @default(now())
+  shift       Shift    @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([shiftId, userId])
+  @@index([userId])
+}
+
+model ShiftAudit {
+  id          String    @id
+  shiftId      String
+  actorUserId  String
+  action       String
+  summary      String
+  atUtc        DateTime @db.Timestamptz(6)
+  before       Json?
+  after        Json?
+  shift        Shift    @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  actor        User     @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([shiftId, atUtc])
+}
+
+model CoverageRequest {
+  id                 String                @id
+  type               CoverageRequestType
+  shiftId            String
+  requestedByUserId  String
+  counterpartUserId  String?
+  claimantUserId     String?
+  status             CoverageRequestStatus
+  createdAtUtc       DateTime              @db.Timestamptz(6)
+  updatedAtUtc       DateTime              @db.Timestamptz(6)
+  expiresAtUtc       DateTime              @db.Timestamptz(6)
+  note               String
+  cancellationReason String?
+  shift              Shift                 @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  requestedBy        User                  @relation("CoverageRequestedBy", fields: [requestedByUserId], references: [id], onDelete: Restrict)
+  counterpart        User?                 @relation("CoverageCounterpart", fields: [counterpartUserId], references: [id], onDelete: Restrict)
+  claimant           User?                 @relation("CoverageClaimant", fields: [claimantUserId], references: [id], onDelete: Restrict)
+
+  @@index([shiftId, status])
+}
+
+model NotificationPreference {
+  userId               String  @id
+  scheduleUpdates      Boolean @default(true)
+  coverageUpdates      Boolean @default(true)
+  overtimeWarnings     Boolean @default(true)
+  availabilityUpdates  Boolean @default(true)
+  user                 User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id           String           @id
+  userId       String
+  type         NotificationType
+  title        String
+  body         String
+  readAtUtc    DateTime?        @db.Timestamptz(6)
+  createdAtUtc DateTime         @db.Timestamptz(6)
+  createdAt    DateTime         @default(now())
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAtUtc])
+  @@index([userId, readAtUtc])
+}

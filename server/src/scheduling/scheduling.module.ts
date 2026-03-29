@@ -1,14 +1,14 @@
 import { Module } from '@nestjs/common';
 
 import { AuthModule } from '../auth/auth.module';
-import { CoverageController } from './coverage.controller';
+import { NotificationsModule } from '../notifications/notifications.module';
+import { RealtimeModule } from '../realtime/realtime.module';
 import { LocationsController } from './locations.controller';
 import { SchedulingService } from './scheduling.service';
-import { ShiftsController } from './shifts.controller';
 
 @Module({
-  imports: [AuthModule],
-  controllers: [LocationsController, ShiftsController, CoverageController],
+  imports: [AuthModule, NotificationsModule, RealtimeModule],
+  controllers: [LocationsController],
   providers: [SchedulingService],
   exports: [SchedulingService],
 })

@@ -1,18 +1,28 @@
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 
+import { formatWeekRangeLabel } from "@/components/schedule/schedule.utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
-import { useScheduleWorkspace } from "@/components/schedule/schedule-workspace";
+import { useScheduleBoardData } from "@/components/schedule/use-schedule-board-data";
+import { useScheduleStore } from "@/stores/schedule-store";
 
 export function ScheduleHeader() {
-  const { canManageBoard, openCreateDialog, scheduleBoard } =
-    useScheduleWorkspace();
+  const goToCurrentWeek = useScheduleStore((state) => state.goToCurrentWeek);
+  const goToNextWeek = useScheduleStore((state) => state.goToNextWeek);
+  const goToPreviousWeek = useScheduleStore((state) => state.goToPreviousWeek);
+  const openCreateDialog = useScheduleStore((state) => state.openCreateDialog);
+  const { canManageBoard, scheduleBoard } = useScheduleBoardData();
 
   if (!scheduleBoard) {
     return null;
   }
+
+  const weekLabel = formatWeekRangeLabel(
+    scheduleBoard.weekStartDate,
+    scheduleBoard.weekEndDate,
+  );
 
   return (
     <Card className="overflow-hidden border-white/70 bg-white/88">
@@ -21,10 +31,6 @@ export function ScheduleHeader() {
           <Badge variant="secondary" className="bg-primary/10 text-primary">
             Weekly board
           </Badge>
-          <Badge variant="outline">{scheduleBoard.weekLabel}</Badge>
-          <Badge variant="outline">
-            {scheduleBoard.publishCutoffHours}h cutoff
-          </Badge>
         </div>
 
         <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
@@ -32,21 +38,39 @@ export function ScheduleHeader() {
             <CardTitle className="clamp-[text,2rem,3.5rem] tracking-tight">
               Schedules
             </CardTitle>
-            <p className="text-sm leading-6 text-muted-foreground">
-              Shifts, staffing, and publish status by location.
-            </p>
+            <p className="text-sm leading-6 text-muted-foreground">Sunday to Saturday.</p>
           </div>
 
           <div className="flex flex-wrap gap-3">
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label="Previous week"
+              onClick={goToPreviousWeek}
+            >
+              <ChevronLeft className="size-4" />
+            </Button>
+            <Button variant="outline" onClick={goToCurrentWeek}>
+              Current week
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label="Next week"
+              onClick={goToNextWeek}
+            >
+              <ChevronRight className="size-4" />
+            </Button>
+            <Badge variant="outline">{weekLabel}</Badge>
             <Button variant="outline" asChild>
               <Link href="/coverage">Coverage queue</Link>
             </Button>
-            {canManageBoard ? (
+            {canManageBoard && (
               <Button onClick={openCreateDialog}>
                 <Plus className="size-4" />
                 Create shift
               </Button>
-            ) : null}
+            )}
           </div>
         </div>
       </CardHeader>

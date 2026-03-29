@@ -7,12 +7,6 @@ export type ShiftState =
   | "blocked"
   | "pending";
 
-export type AssignmentOptionStatus =
-  | "assigned"
-  | "available"
-  | "warning"
-  | "blocked";
-
 export type CoverageRequestType = "swap" | "drop";
 
 export type CoverageRequestStatus =
@@ -20,8 +14,25 @@ export type CoverageRequestStatus =
   | "pending_manager"
   | "open"
   | "approved"
+  | "rejected"
   | "cancelled"
   | "expired";
+
+export type CoverageRequestAction =
+  | "approve"
+  | "cancel"
+  | "accept"
+  | "reject"
+  | "claim"
+  | "withdraw";
+
+export type CoverageRequestViewerRelation =
+  | "requester"
+  | "counterpart"
+  | "claimant"
+  | "manager"
+  | "eligible_claimant"
+  | "observer";
 
 export type StaffSummaryResponse = {
   id: string;
@@ -51,13 +62,28 @@ export type ScheduleStaffResponse = StaffSummaryResponse & {
   desiredHours: number;
 };
 
-export type AssignmentOptionResponse = {
+export type EligibleStaffResponse = {
   staff: ScheduleStaffResponse;
-  status: AssignmentOptionStatus;
-  message?: string;
-  suggestions?: StaffSummaryResponse[];
-  warningMessages?: string[];
+  warningMessages: string[];
   projectedWeeklyHours?: number;
+};
+
+export type AssignmentViolationRule =
+  | "assignment_constraint"
+  | "required_skill"
+  | "location_certification"
+  | "availability_window"
+  | "no_overlapping_shifts"
+  | "minimum_rest_between_shifts"
+  | "daily_hours_hard_block"
+  | "seventh_consecutive_day_override_required"
+  | "required_headcount";
+
+export type AssignmentViolationResponse = {
+  code: string;
+  message: string;
+  violatedRule: AssignmentViolationRule;
+  suggestedStaff: StaffSummaryResponse[];
 };
 
 export type ShiftResponse = {
@@ -80,41 +106,20 @@ export type ShiftResponse = {
   published: boolean;
   canEdit: boolean;
   state: ShiftState;
-  note: string;
-  explanation?: string;
-  projectedImpact?: string;
+  statusSummary: string;
   suggestions?: StaffSummaryResponse[];
   warningMessages: string[];
-  assignmentOptions: AssignmentOptionResponse[];
   auditCount: number;
 };
 
-export type PublishBlockerResponse = {
-  id: string;
-  title: string;
-  state: ShiftState;
-  locationCode: string;
-  timeLabel: string;
-  reason: string;
-};
-
 export type SchedulingBoardResponse = {
-  weekLabel: string;
   weekStartDate: string;
   weekEndDate: string;
-  publishCutoffHours: number;
-  locations: ScheduleLocationResponse[];
-  staffDirectory: ScheduleStaffResponse[];
-  skills: string[];
   shifts: ShiftResponse[];
-  summary: {
-    totalShiftCount: number;
-    openShiftCount: number;
-    riskShiftCount: number;
-    premiumShiftCount: number;
-    publishedShiftCount: number;
-  };
-  publishBlockers: PublishBlockerResponse[];
+};
+
+export type ShiftReferenceDataResponse = {
+  skills: string[];
 };
 
 export type CoverageRequestStep = {
@@ -126,7 +131,6 @@ export type CoverageRequestResponse = {
   id: string;
   type: CoverageRequestType;
   status: CoverageRequestStatus;
-  statusLabel: string;
   expiresInLabel: string;
   note: string;
   shift: {
@@ -144,16 +148,12 @@ export type CoverageRequestResponse = {
   suggestedClaimants: StaffSummaryResponse[];
   steps: CoverageRequestStep[];
   originalAssignmentRemains: boolean;
+  viewerRelation: CoverageRequestViewerRelation;
+  availableActions: CoverageRequestAction[];
 };
 
 export type CoverageBoardResponse = {
   requests: CoverageRequestResponse[];
-  summary: {
-    totalRequests: number;
-    managerActionCount: number;
-    dropRequestCount: number;
-    swapRequestCount: number;
-  };
 };
 
 export type ShiftMutationPayload = {
@@ -168,6 +168,7 @@ export type ShiftMutationPayload = {
 export type ShiftAssignmentPayload = {
   shiftId: string;
   staffId: string;
+  overrideReason?: string;
 };
 
 export type ShiftAssigneeRemovalPayload = {
@@ -178,4 +179,18 @@ export type ShiftAssigneeRemovalPayload = {
 export type CoverageActionResponse = {
   success: true;
   request: CoverageRequestResponse;
+};
+
+export type CoverageRequestMutationPayload = {
+  shiftId: string;
+  counterpartUserId?: string;
+  note?: string;
+};
+
+export type CoverageRequestOptionsResponse = {
+  shiftId: string;
+  shiftTitle: string;
+  requester: StaffSummaryResponse;
+  eligibleSwapTargets: StaffSummaryResponse[];
+  eligibleDropClaimants: StaffSummaryResponse[];
 };
