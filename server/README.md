@@ -56,6 +56,7 @@ The seed script mirrors the current mock domain:
 - seeded shifts and assignments
 - shift audit trail
 - coverage requests
+- notification preferences and seeded notifications
 
 ## Seeded auth accounts
 
@@ -86,12 +87,14 @@ Current database sources:
 - `prisma/schema.prisma`
 - `prisma/seed.ts`
 - `src/database/prisma.service.ts`
+- `src/notifications/notifications.service.ts`
 
 That means:
 
 - Postgres is now set up inside the Nest app
 - the schema is ready for production-style persistence
-- the next migration step is swapping service methods from the in-memory store to Prisma queries
+- notifications are already persisted through Prisma/Postgres
+- the next migration step is swapping auth and scheduling service methods from the in-memory store to Prisma queries
 
 ## Timezone handling
 
@@ -144,7 +147,7 @@ The server now also exposes:
 
 - operations dashboard analytics for overtime, compliance, fairness, and on-duty-now
 - realtime SSE updates for schedule, coverage, dashboard, and notification invalidation
-- persisted in-memory notifications with read state and in-app preference controls
+- Postgres-backed notifications with read state and in-app preference controls
 - shift audit history plus admin audit export by date range and location
 
 Important implementation notes:

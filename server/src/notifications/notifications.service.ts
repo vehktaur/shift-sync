@@ -36,8 +36,9 @@ export class NotificationsService {
     });
 
     return {
-      unreadCount: notifications.filter((notification) => !notification.readAtUtc)
-        .length,
+      unreadCount: notifications.filter(
+        (notification) => !notification.readAtUtc,
+      ).length,
       notifications: notifications.map((notification) =>
         this.toNotificationResponse(notification),
       ),

@@ -23,11 +23,11 @@ export class AssignmentsController {
   constructor(private readonly schedulingService: SchedulingService) {}
 
   @Post()
-  assignStaff(
+  async assignStaff(
     @CurrentUser() viewer: SessionUser,
     @Param('shiftId') shiftId: string,
     @Body() body: ShiftAssignmentRequestBody,
-  ): ShiftResponse {
+  ): Promise<ShiftResponse> {
     if (!body.staffId) {
       throw new BadRequestException('staffId is required.');
     }
@@ -41,11 +41,11 @@ export class AssignmentsController {
   }
 
   @Delete(':staffId')
-  removeStaff(
+  async removeStaff(
     @CurrentUser() viewer: SessionUser,
     @Param('shiftId') shiftId: string,
     @Param('staffId') staffId: string,
-  ): ShiftResponse {
+  ): Promise<ShiftResponse> {
     return this.schedulingService.removeAssignee(viewer, shiftId, staffId);
   }
 }

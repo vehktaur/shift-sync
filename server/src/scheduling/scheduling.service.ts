@@ -426,11 +426,11 @@ export class SchedulingService {
     return this.buildShiftResponse(shift);
   }
 
-  updateShift(
+  async updateShift(
     viewer: SessionUser,
     shiftId: string,
     body: ShiftMutationRequestBody,
-  ): ShiftResponse {
+  ): Promise<ShiftResponse> {
     const schedulingViewer = this.getSchedulingViewer(viewer);
     this.ensureManagerOrAdmin(schedulingViewer.record);
     const shift = this.getAccessibleShift(shiftId, schedulingViewer.record);
@@ -487,7 +487,7 @@ export class SchedulingService {
       'Shift edited before approval. Pending coverage request auto-cancelled.',
     );
 
-    this.notifyShiftMutation({
+    await this.notifyShiftMutation({
       shift,
       type: 'shift_changed',
       title: 'Shift updated',
@@ -503,12 +503,12 @@ export class SchedulingService {
     return this.buildShiftResponse(shift);
   }
 
-  assignStaff(
+  async assignStaff(
     viewer: SessionUser,
     shiftId: string,
     staffId: string,
     overrideReason?: string,
-  ): ShiftResponse {
+  ): Promise<ShiftResponse> {
     const schedulingViewer = this.getSchedulingViewer(viewer);
     this.ensureManagerOrAdmin(schedulingViewer.record);
     const shift = this.getAccessibleShift(shiftId, schedulingViewer.record);
@@ -605,11 +605,11 @@ export class SchedulingService {
     return this.buildShiftResponse(shift);
   }
 
-  removeAssignee(
+  async removeAssignee(
     viewer: SessionUser,
     shiftId: string,
     staffId: string,
-  ): ShiftResponse {
+  ): Promise<ShiftResponse> {
     const schedulingViewer = this.getSchedulingViewer(viewer);
     this.ensureManagerOrAdmin(schedulingViewer.record);
     const shift = this.getAccessibleShift(shiftId, schedulingViewer.record);
@@ -661,7 +661,10 @@ export class SchedulingService {
     return this.buildShiftResponse(shift);
   }
 
-  publishShift(viewer: SessionUser, shiftId: string): ShiftResponse {
+  async publishShift(
+    viewer: SessionUser,
+    shiftId: string,
+  ): Promise<ShiftResponse> {
     const schedulingViewer = this.getSchedulingViewer(viewer);
     this.ensureManagerOrAdmin(schedulingViewer.record);
     const shift = this.getAccessibleShift(shiftId, schedulingViewer.record);
@@ -679,7 +682,7 @@ export class SchedulingService {
       ),
     );
 
-    this.notifyShiftMutation({
+    await this.notifyShiftMutation({
       shift,
       type: 'schedule_published',
       title: 'Schedule published',
@@ -694,7 +697,10 @@ export class SchedulingService {
     return this.buildShiftResponse(shift);
   }
 
-  unpublishShift(viewer: SessionUser, shiftId: string): ShiftResponse {
+  async unpublishShift(
+    viewer: SessionUser,
+    shiftId: string,
+  ): Promise<ShiftResponse> {
     const schedulingViewer = this.getSchedulingViewer(viewer);
     this.ensureManagerOrAdmin(schedulingViewer.record);
     const shift = this.getAccessibleShift(shiftId, schedulingViewer.record);
@@ -711,7 +717,7 @@ export class SchedulingService {
       ),
     );
 
-    this.notifyShiftMutation({
+    await this.notifyShiftMutation({
       shift,
       type: 'shift_changed',
       title: 'Shift moved back to draft',
@@ -726,10 +732,10 @@ export class SchedulingService {
     return this.buildShiftResponse(shift);
   }
 
-  publishVisibleWeek(
+  async publishVisibleWeek(
     viewer: SessionUser,
     requestedWeekStartDate?: string,
-  ): SchedulingBoardResponse {
+  ): Promise<SchedulingBoardResponse> {
     const schedulingViewer = this.getSchedulingViewer(viewer);
     this.ensureManagerOrAdmin(schedulingViewer.record);
     const boardWeek = this.resolveBoardWeek(requestedWeekStartDate);
@@ -753,7 +759,7 @@ export class SchedulingService {
       );
     }
 
-    visibleShifts.forEach((shift) => {
+    for (const shift of visibleShifts) {
       if (!shift.published) {
         shift.published = true;
         shift.updatedByUserId = schedulingViewer.id;
@@ -765,14 +771,14 @@ export class SchedulingService {
             'Published shift as part of the weekly publish action.',
           ),
         );
-        this.notifyShiftMutation({
+        await this.notifyShiftMutation({
           shift,
           type: 'schedule_published',
           title: 'Schedule published',
           body: `${shift.title} has been published to staff.`,
         });
       }
-    });
+    }
 
     this.emitSchedulingChange({
       locationIds: visibleShifts.map((shift) => shift.locationId),
@@ -874,10 +880,10 @@ export class SchedulingService {
     };
   }
 
-  createSwapRequest(
+  async createSwapRequest(
     viewer: SessionUser,
     body: CoverageRequestMutationBody,
-  ): CoverageActionResponse {
+  ): Promise<CoverageActionResponse> {
     const schedulingViewer = this.getSchedulingViewer(viewer);
     this.ensureStaff(schedulingViewer.record);
 
@@ -965,10 +971,10 @@ export class SchedulingService {
     };
   }
 
-  createDropRequest(
+  async createDropRequest(
     viewer: SessionUser,
     body: CoverageRequestMutationBody,
-  ): CoverageActionResponse {
+  ): Promise<CoverageActionResponse> {
     const schedulingViewer = this.getSchedulingViewer(viewer);
     this.ensureStaff(schedulingViewer.record);
 
@@ -1031,10 +1037,10 @@ export class SchedulingService {
     };
   }
 
-  acceptCoverageRequest(
+  async acceptCoverageRequest(
     viewer: SessionUser,
     requestId: string,
-  ): CoverageActionResponse {
+  ): Promise<CoverageActionResponse> {
     const schedulingViewer = this.getSchedulingViewer(viewer);
     this.ensureStaff(schedulingViewer.record);
     this.expireCoverageRequests();
@@ -1095,10 +1101,10 @@ export class SchedulingService {
     };
   }
 
-  rejectCoverageRequest(
+  async rejectCoverageRequest(
     viewer: SessionUser,
     requestId: string,
-  ): CoverageActionResponse {
+  ): Promise<CoverageActionResponse> {
     const schedulingViewer = this.getSchedulingViewer(viewer);
     this.ensureStaff(schedulingViewer.record);
     this.expireCoverageRequests();
@@ -1144,10 +1150,10 @@ export class SchedulingService {
     };
   }
 
-  claimCoverageRequest(
+  async claimCoverageRequest(
     viewer: SessionUser,
     requestId: string,
-  ): CoverageActionResponse {
+  ): Promise<CoverageActionResponse> {
     const schedulingViewer = this.getSchedulingViewer(viewer);
     this.ensureStaff(schedulingViewer.record);
     this.expireCoverageRequests();
@@ -1207,10 +1213,10 @@ export class SchedulingService {
     };
   }
 
-  withdrawCoverageRequest(
+  async withdrawCoverageRequest(
     viewer: SessionUser,
     requestId: string,
-  ): CoverageActionResponse {
+  ): Promise<CoverageActionResponse> {
     const schedulingViewer = this.getSchedulingViewer(viewer);
     this.ensureStaff(schedulingViewer.record);
     this.expireCoverageRequests();
@@ -1273,10 +1279,10 @@ export class SchedulingService {
     };
   }
 
-  approveCoverageRequest(
+  async approveCoverageRequest(
     viewer: SessionUser,
     requestId: string,
-  ): CoverageActionResponse {
+  ): Promise<CoverageActionResponse> {
     const schedulingViewer = this.getSchedulingViewer(viewer);
     this.ensureManagerOrAdmin(schedulingViewer.record);
     this.expireCoverageRequests();
@@ -1384,10 +1390,10 @@ export class SchedulingService {
     };
   }
 
-  cancelCoverageRequest(
+  async cancelCoverageRequest(
     viewer: SessionUser,
     requestId: string,
-  ): CoverageActionResponse {
+  ): Promise<CoverageActionResponse> {
     const schedulingViewer = this.getSchedulingViewer(viewer);
     this.ensureManagerOrAdmin(schedulingViewer.record);
     const request = this.getCoverageRequestById(requestId);
@@ -1844,7 +1850,7 @@ export class SchedulingService {
       .map((user) => user.id);
   }
 
-  private notifyShiftMutation(params: {
+  private async notifyShiftMutation(params: {
     shift: ShiftRecord;
     type: NotificationType;
     title: string;

@@ -56,35 +56,35 @@ export class ShiftsController {
   }
 
   @Patch(':shiftId')
-  updateShift(
+  async updateShift(
     @CurrentUser() viewer: SessionUser,
     @Param('shiftId') shiftId: string,
     @Body() body: ShiftMutationRequestBody,
-  ): ShiftResponse {
+  ): Promise<ShiftResponse> {
     return this.schedulingService.updateShift(viewer, shiftId, body);
   }
 
   @Post(':shiftId/publish')
-  publishShift(
+  async publishShift(
     @CurrentUser() viewer: SessionUser,
     @Param('shiftId') shiftId: string,
-  ): ShiftResponse {
+  ): Promise<ShiftResponse> {
     return this.schedulingService.publishShift(viewer, shiftId);
   }
 
   @Post(':shiftId/unpublish')
-  unpublishShift(
+  async unpublishShift(
     @CurrentUser() viewer: SessionUser,
     @Param('shiftId') shiftId: string,
-  ): ShiftResponse {
+  ): Promise<ShiftResponse> {
     return this.schedulingService.unpublishShift(viewer, shiftId);
   }
 
   @Post('actions/publish-week')
-  publishWeek(
+  async publishWeek(
     @CurrentUser() viewer: SessionUser,
     @Query('weekStart') weekStart?: string,
-  ): SchedulingBoardResponse {
+  ): Promise<SchedulingBoardResponse> {
     return this.schedulingService.publishVisibleWeek(viewer, weekStart);
   }
 

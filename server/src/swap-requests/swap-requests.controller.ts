@@ -30,66 +30,66 @@ export class SwapRequestsController {
   }
 
   @Post('requests/swap')
-  createSwap(
+  async createSwap(
     @CurrentUser() viewer: SessionUser,
     @Body() body: CoverageRequestMutationBody,
-  ): CoverageActionResponse {
+  ): Promise<CoverageActionResponse> {
     return this.schedulingService.createSwapRequest(viewer, body);
   }
 
   @Post('requests/drop')
-  createDrop(
+  async createDrop(
     @CurrentUser() viewer: SessionUser,
     @Body() body: CoverageRequestMutationBody,
-  ): CoverageActionResponse {
+  ): Promise<CoverageActionResponse> {
     return this.schedulingService.createDropRequest(viewer, body);
   }
 
   @Post('requests/:requestId/accept')
-  accept(
+  async accept(
     @CurrentUser() viewer: SessionUser,
     @Param('requestId') requestId: string,
-  ): CoverageActionResponse {
+  ): Promise<CoverageActionResponse> {
     return this.schedulingService.acceptCoverageRequest(viewer, requestId);
   }
 
   @Post('requests/:requestId/reject')
-  reject(
+  async reject(
     @CurrentUser() viewer: SessionUser,
     @Param('requestId') requestId: string,
-  ): CoverageActionResponse {
+  ): Promise<CoverageActionResponse> {
     return this.schedulingService.rejectCoverageRequest(viewer, requestId);
   }
 
   @Post('requests/:requestId/claim')
-  claim(
+  async claim(
     @CurrentUser() viewer: SessionUser,
     @Param('requestId') requestId: string,
-  ): CoverageActionResponse {
+  ): Promise<CoverageActionResponse> {
     return this.schedulingService.claimCoverageRequest(viewer, requestId);
   }
 
   @Post('requests/:requestId/withdraw')
-  withdraw(
+  async withdraw(
     @CurrentUser() viewer: SessionUser,
     @Param('requestId') requestId: string,
-  ): CoverageActionResponse {
+  ): Promise<CoverageActionResponse> {
     return this.schedulingService.withdrawCoverageRequest(viewer, requestId);
   }
 
   @Post('requests/:requestId/approve')
-  approve(
+  async approve(
     @CurrentUser() viewer: SessionUser,
     @Param('requestId') requestId: string,
-  ): CoverageActionResponse {
+  ): Promise<CoverageActionResponse> {
     return this.schedulingService.approveCoverageRequest(viewer, requestId);
   }
 
   @Post('requests/:requestId/cancel')
-  cancel(
+  async cancel(
     @CurrentUser() viewer: SessionUser,
     @Param('requestId') requestId: string,
-  ): CoverageActionResponse {
+  ): Promise<CoverageActionResponse> {
     return this.schedulingService.cancelCoverageRequest(viewer, requestId);
   }
 }
