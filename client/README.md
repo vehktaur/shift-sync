@@ -11,7 +11,9 @@ npm run dev
 
 Default app URL: `http://localhost:3000`
 
-Set `NEXT_PUBLIC_API_BASE_URL` if the Nest API is not running at `http://localhost:3001/api`.
+Set `API_BASE_URL` if the Nest API is not running at `http://localhost:3001/api`.
+
+For production, the browser talks to the app's own `/api/proxy/...` route and the proxy forwards requests to Nest using `API_BASE_URL`. This keeps auth cookies on the frontend domain so server-rendered session checks work across separate frontend and backend hosts.
 
 ## Frontend structure
 
