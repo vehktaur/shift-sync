@@ -1,5 +1,11 @@
 # ShiftSync Evaluator Guide
 
+## Submission status
+
+- The app is in a strong submission-ready state for the assessment.
+- The primary product flows are implemented and demoable end to end.
+- It is not yet fully production-hardened because auth and scheduling runtime data are still partially in-memory on the backend.
+
 ## Demo accounts
 
 All demo accounts use:
@@ -56,6 +62,16 @@ Default URLs:
 - In-app notification center, SSE invalidation, and audit history
 - Activity log page for shift history and admin export
 
+## Recommended walkthrough
+
+1. Log in as an admin and review the weekly schedule board.
+2. Edit a shift and confirm the eligible staff list changes after saving.
+3. Assign staff and trigger at least one validation warning or block.
+4. Switch to a staff account and create a swap or drop request.
+5. Switch to the relevant counterpart or manager account to continue the coverage workflow.
+6. Review notifications and the activity log after the change.
+7. Check dashboard and team views for overtime and fairness reporting.
+
 ## Assumptions
 
 - Notification delivery is in-app only.
@@ -66,7 +82,17 @@ Default URLs:
 
 ## Known limitations
 
-- The Prisma/PostgreSQL layer is scaffolded in the Nest app, but current runtime scheduling/auth flows still use the in-memory seed store while the migration to Prisma is being completed.
+- Notifications are persisted in Postgres, but auth, user, and scheduling runtime data still rely on the in-memory seed store.
 - Realtime updates use SSE-driven query invalidation rather than full bidirectional sockets.
-- The app is not deployed to a public URL yet.
-- Simultaneous assignment protection is validated on the backend, but true transaction-level conflict handling will be stronger after the Prisma migration is completed.
+- Simultaneous assignment protection is validated on the backend, but true transaction-level conflict handling still needs a fully database-backed scheduling runtime with transactional guarantees.
+- `On-duty now` is schedule-derived rather than backed by a real clock-in/clock-out system.
+- Availability is enforced in scheduling logic, but staff availability management is not yet a complete self-service workflow.
+
+## Production gap checklist
+
+- Move auth, users, locations, shifts, assignments, and coverage requests fully from in-memory runtime data to Prisma/Postgres.
+- Add transaction-safe conflict handling for simultaneous assignment and approval operations.
+- Add stronger automated test coverage across backend rules and frontend critical flows.
+- Add production-grade observability: structured logs, error tracking, health checks, and monitoring.
+- Add request hardening such as rate limiting and a fuller session/cookie security review.
+- Replace schedule-derived `on-duty now` with a real attendance or clock event model if the product requires live operational accuracy.

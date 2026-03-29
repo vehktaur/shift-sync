@@ -67,3 +67,9 @@ Top-level `src/components/schedule-view.tsx` and `src/components/coverage-view.t
 - Coverage request option lookup by shift
 - Staff-created swap and drop requests
 - 7th-day override prompt with documented manager reason
+
+## Current readiness
+
+- Good fit for demo and submission use
+- Production auth works through the Next proxy + route-handler BFF pattern
+- Remaining production risk is mostly on the backend runtime, where core scheduling/auth data still need full database-backed persistence

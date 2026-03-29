@@ -44,6 +44,7 @@ Useful commands:
 ```bash
 npm run db:generate
 npm run db:migrate -- --name init
+npm run db:deploy
 npm run db:seed
 npm run db:studio
 ```
@@ -95,6 +96,12 @@ That means:
 - the schema is ready for production-style persistence
 - notifications are already persisted through Prisma/Postgres
 - the next migration step is swapping auth and scheduling service methods from the in-memory store to Prisma queries
+
+## Current readiness
+
+- Good fit for demo and submission use
+- Not yet fully production-hardened because scheduling/auth runtime data are still partially in-memory
+- Best next production step is finishing the Prisma migration for the core scheduling domain
 
 ## Timezone handling
 

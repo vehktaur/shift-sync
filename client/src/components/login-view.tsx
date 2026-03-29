@@ -6,6 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Controller, type SubmitHandler, useForm } from "react-hook-form";
 import { toast } from "sonner";
 
+import { useDemoAccounts } from "@/hooks/use-auth";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,15 +26,19 @@ import { Input } from "@/components/ui/input";
 import { authQueryKeys, login } from "@/lib/api/auth";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { type LoginFormValues, loginSchema } from "@/lib/schemas";
+import type { DemoAccount } from "@/types/auth";
 
 const ADMIN_LOGIN_DEFAULTS: LoginFormValues = {
   email: "ava.admin@coastaleats.com",
   password: "Coastal123!",
 };
 
+const DEMO_PASSWORD_FALLBACK = "Coastal123!";
+
 export function LoginView() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const demoAccountsQuery = useDemoAccounts();
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: ADMIN_LOGIN_DEFAULTS,
@@ -58,6 +63,15 @@ export function LoginView() {
 
   const onSubmit: SubmitHandler<LoginFormValues> = (values) => {
     loginMutation.mutate(values);
+  };
+  const demoAccounts = demoAccountsQuery.data?.accounts ?? [];
+
+  const applyDemoAccount = (account: DemoAccount) => {
+    form.reset({
+      email: account.email,
+      password:
+        demoAccountsQuery.data?.sharedPassword ?? DEMO_PASSWORD_FALLBACK,
+    });
   };
 
   return (
@@ -131,6 +145,57 @@ export function LoginView() {
                 Sign In
               </Button>
             </form>
+
+            <section
+              aria-labelledby="demo-access-title"
+              className="space-y-4 border-t border-border/60 pt-5"
+            >
+              <div className="space-y-1">
+                <h2
+                  id="demo-access-title"
+                  className="text-sm font-semibold text-foreground"
+                >
+                  Demo access
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  Pick an account to fill the form.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <Badge variant="outline">
+                  Password
+                  {" · "}
+                  {demoAccountsQuery.data?.sharedPassword ??
+                    DEMO_PASSWORD_FALLBACK}
+                </Badge>
+              </div>
+
+              {demoAccounts.length > 0 && (
+                <div className="grid gap-2 sm:grid-cols-2 md:max-h-36 overflow-y-auto" >
+                  {demoAccounts.map((account) => (
+                    <button
+                      key={account.id}
+                      type="button"
+                      onClick={() => applyDemoAccount(account)}
+                      className="flex items-center justify-between gap-3 border border-border/70 bg-background/70 px-3 py-3 text-left transition-colors hover:border-primary/40 hover:bg-background"
+                    >
+                      <span className="min-w-0 space-y-0.5">
+                        <span className="block truncate text-sm font-medium text-foreground">
+                          {account.name}
+                        </span>
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {account.email}
+                        </span>
+                      </span>
+                      <Badge variant="secondary" className="shrink-0 uppercase">
+                        {account.role}
+                      </Badge>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </section>
           </CardContent>
         </Card>
       </div>
