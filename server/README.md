@@ -76,32 +76,34 @@ Examples:
 
 ## Runtime status
 
-The database layer is configured and ready, but the current auth and scheduling services still read from the in-memory seed sources while we migrate endpoint logic incrementally.
+The Nest runtime now boots auth, users, locations, shifts, assignments, and coverage requests from Postgres through Prisma.
 
-Current runtime sources:
-
-- `src/scheduling/scheduling.data.ts`
-- `src/auth/mock-users.ts`
-
-Current database sources:
+Current runtime bootstrap and persistence layers:
 
 - `prisma/schema.prisma`
 - `prisma/seed.ts`
 - `src/database/prisma.service.ts`
+- `src/database/runtime-data.service.ts`
 - `src/notifications/notifications.service.ts`
+
+Seed-only reference sources:
+
+- `src/auth/mock-users.ts`
+- `src/scheduling/scheduling.data.ts`
 
 That means:
 
-- Postgres is now set up inside the Nest app
-- the schema is ready for production-style persistence
-- notifications are already persisted through Prisma/Postgres
-- the next migration step is swapping auth and scheduling service methods from the in-memory store to Prisma queries
+- Postgres is the runtime persistence layer for notifications and scheduling state
+- auth and scheduling now read their initial runtime state from Prisma-backed tables
+- scheduling writes are persisted back through Prisma so reloads and restarts keep state
+- the remaining backend hardening work is around transactions, incremental writes, and test coverage
 
 ## Current readiness
 
 - Good fit for demo and submission use
-- Not yet fully production-hardened because scheduling/auth runtime data are still partially in-memory
-- Best next production step is finishing the Prisma migration for the core scheduling domain
+- Runtime data no longer depends on in-memory seed sources once the database is seeded
+- Not yet fully production-hardened because simultaneous write paths still need stronger transaction-safe conflict handling
+- Best next production step is replacing the current snapshot-style scheduling persistence with more granular transactional writes
 
 ## Timezone handling
 
@@ -146,7 +148,7 @@ Current coverage endpoints model:
 - max three active requests per requester
 - original assignment remains until final approval
 - pending coverage requests can be cancelled when a shift changes
-- expired drop handling inside the in-memory store
+- expired drop handling is persisted back to Postgres on read and mutation flows
 
 ## Operations, realtime, notifications, and audit
 

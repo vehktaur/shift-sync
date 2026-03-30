@@ -2,13 +2,7 @@ import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
 import { DEMO_PASSWORD, SESSION_COOKIE_NAME } from './auth.constants';
-import {
-  authenticateSeededUser,
-  getDefaultRedirectPath,
-  getDemoAccounts,
-  getUserById,
-  toSessionUser,
-} from './mock-users';
+import { RuntimeDataService } from '../database/runtime-data.service';
 import { SessionService } from './session.service';
 import type {
   DemoAccountsResponse,
@@ -19,11 +13,14 @@ import type {
 
 @Injectable()
 export class AuthService {
-  constructor(private readonly sessionService: SessionService) {}
+  constructor(
+    private readonly sessionService: SessionService,
+    private readonly runtimeData: RuntimeDataService,
+  ) {}
 
   getDemoAccounts(): DemoAccountsResponse {
     return {
-      accounts: getDemoAccounts(),
+      accounts: this.runtimeData.getDemoAccounts(),
       sharedPassword: DEMO_PASSWORD,
     };
   }
@@ -33,9 +30,13 @@ export class AuthService {
     response: Response,
   ): Promise<LoginResponse> {
     const { email, password } = this.validateLoginRequest(requestBody);
-    const user = authenticateSeededUser(email, password);
+    const user = this.runtimeData
+      .getAllUsers()
+      .find(
+        (candidate) => candidate.email.toLowerCase() === email.toLowerCase(),
+      );
 
-    if (!user) {
+    if (!user || password !== DEMO_PASSWORD) {
       throw new HttpException(
         { message: 'Invalid email or password.' },
         HttpStatus.UNAUTHORIZED,
@@ -50,8 +51,8 @@ export class AuthService {
     });
 
     return {
-      user: toSessionUser(user),
-      redirectTo: getDefaultRedirectPath(),
+      user: this.runtimeData.toSessionUser(user),
+      redirectTo: '/',
     };
   }
 
@@ -67,7 +68,7 @@ export class AuthService {
       return null;
     }
 
-    const user = getUserById(payload.sub);
+    const user = this.runtimeData.getUserById(payload.sub);
 
     if (!user) {
       return null;
@@ -81,7 +82,7 @@ export class AuthService {
       return null;
     }
 
-    return toSessionUser(user);
+    return this.runtimeData.toSessionUser(user);
   }
 
   private validateLoginRequest(requestBody: LoginRequestBody) {

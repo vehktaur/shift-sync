@@ -3,7 +3,8 @@ import { PrismaClient, type Prisma } from '@prisma/client';
 import { DateTime } from 'luxon';
 
 import { DEMO_PASSWORD } from '../src/auth/auth.constants';
-import { getAllUsers, ROLE_PERMISSIONS } from '../src/auth/mock-users';
+import { ROLE_PERMISSIONS } from '../src/auth/auth.permissions';
+import { getAllUsers } from '../src/auth/mock-users';
 import { schedulingStore } from '../src/scheduling/scheduling.data';
 
 const DEFAULT_DATABASE_URL =

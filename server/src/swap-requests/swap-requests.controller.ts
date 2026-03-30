@@ -17,15 +17,17 @@ export class SwapRequestsController {
   constructor(private readonly schedulingService: SchedulingService) {}
 
   @Get('board')
-  getBoard(@CurrentUser() viewer: SessionUser): CoverageBoardResponse {
+  async getBoard(
+    @CurrentUser() viewer: SessionUser,
+  ): Promise<CoverageBoardResponse> {
     return this.schedulingService.getCoverageBoard(viewer);
   }
 
   @Get('shifts/:shiftId/options')
-  getRequestOptions(
+  async getRequestOptions(
     @CurrentUser() viewer: SessionUser,
     @Param('shiftId') shiftId: string,
-  ): CoverageRequestOptionsResponse {
+  ): Promise<CoverageRequestOptionsResponse> {
     return this.schedulingService.getCoverageRequestOptions(viewer, shiftId);
   }
 

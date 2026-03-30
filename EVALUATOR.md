@@ -4,7 +4,7 @@
 
 - The app is in a strong submission-ready state for the assessment.
 - The primary product flows are implemented and demoable end to end.
-- It is not yet fully production-hardened because auth and scheduling runtime data are still partially in-memory on the backend.
+- It is not yet fully production-hardened because simultaneous scheduling writes still need deeper transactional hardening.
 
 ## Demo accounts
 
@@ -82,15 +82,14 @@ Default URLs:
 
 ## Known limitations
 
-- Notifications are persisted in Postgres, but auth, user, and scheduling runtime data still rely on the in-memory seed store.
+- Runtime auth, users, scheduling, coverage, and notifications all load from the seeded Postgres dataset.
 - Realtime updates use SSE-driven query invalidation rather than full bidirectional sockets.
-- Simultaneous assignment protection is validated on the backend, but true transaction-level conflict handling still needs a fully database-backed scheduling runtime with transactional guarantees.
+- Simultaneous assignment protection is validated on the backend, but true transaction-level conflict handling still needs stronger Prisma transaction patterns.
 - `On-duty now` is schedule-derived rather than backed by a real clock-in/clock-out system.
 - Availability is enforced in scheduling logic, but staff availability management is not yet a complete self-service workflow.
 
 ## Production gap checklist
 
-- Move auth, users, locations, shifts, assignments, and coverage requests fully from in-memory runtime data to Prisma/Postgres.
 - Add transaction-safe conflict handling for simultaneous assignment and approval operations.
 - Add stronger automated test coverage across backend rules and frontend critical flows.
 - Add production-grade observability: structured logs, error tracking, health checks, and monitoring.

@@ -1,17 +1,19 @@
 import { Injectable } from '@nestjs/common';
 
-import { getUserById, getVisibleUsersForViewer } from '../auth/mock-users';
+import { RuntimeDataService } from '../database/runtime-data.service';
 import type { SessionUser } from '../auth/auth.types';
 
 @Injectable()
 export class UsersService {
+  constructor(private readonly runtimeData: RuntimeDataService) {}
+
   getScopedUsers(viewer: SessionUser): SessionUser[] {
-    const viewerRecord = getUserById(viewer.id);
+    const viewerRecord = this.runtimeData.getUserById(viewer.id);
 
     if (!viewerRecord) {
       return [viewer];
     }
 
-    return getVisibleUsersForViewer(viewerRecord);
+    return this.runtimeData.getVisibleUsersForViewer(viewerRecord);
   }
 }

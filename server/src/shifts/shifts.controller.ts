@@ -27,10 +27,10 @@ export class ShiftsController {
   constructor(private readonly schedulingService: SchedulingService) {}
 
   @Get('board')
-  getBoard(
+  async getBoard(
     @CurrentUser() viewer: SessionUser,
     @Query('weekStart') weekStart?: string,
-  ): SchedulingBoardResponse {
+  ): Promise<SchedulingBoardResponse> {
     return this.schedulingService.getSchedulingBoard(viewer, weekStart);
   }
 
@@ -48,10 +48,10 @@ export class ShiftsController {
   }
 
   @Post()
-  createShift(
+  async createShift(
     @CurrentUser() viewer: SessionUser,
     @Body() body: ShiftMutationRequestBody,
-  ): ShiftResponse {
+  ): Promise<ShiftResponse> {
     return this.schedulingService.createShift(viewer, body);
   }
 
@@ -89,10 +89,10 @@ export class ShiftsController {
   }
 
   @Post('actions/unpublish-week')
-  unpublishWeek(
+  async unpublishWeek(
     @CurrentUser() viewer: SessionUser,
     @Query('weekStart') weekStart?: string,
-  ): SchedulingBoardResponse {
+  ): Promise<SchedulingBoardResponse> {
     return this.schedulingService.unpublishVisibleWeek(viewer, weekStart);
   }
 }

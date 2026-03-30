@@ -8,8 +8,8 @@ import {
 } from '@nestjs/common';
 import { DateTime } from 'luxon';
 
-import { getAllUsers, getUserById } from '../auth/mock-users';
 import type { SessionUser, User } from '../auth/auth.types';
+import { RuntimeDataService } from '../database/runtime-data.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import {
@@ -17,7 +17,6 @@ import {
   OVERTIME_PREMIUM_RATE,
   SHIFT_SKILLS,
 } from './scheduling.constants';
-import { schedulingStore } from './scheduling.data';
 import type {
   AuditExportEntryResponse,
   AuditExportResponse,
@@ -107,6 +106,7 @@ const formatHours = (hours: number) => Math.round(hours * 10) / 10;
 @Injectable()
 export class SchedulingService {
   constructor(
+    private readonly runtimeData: RuntimeDataService,
     private readonly notificationsService: NotificationsService,
     private readonly realtimeService: RealtimeService,
   ) {}
@@ -118,12 +118,12 @@ export class SchedulingService {
     );
   }
 
-  getSchedulingBoard(
+  async getSchedulingBoard(
     viewer: SessionUser,
     requestedWeekStartDate?: string,
-  ): SchedulingBoardResponse {
+  ): Promise<SchedulingBoardResponse> {
     const schedulingViewer = this.getSchedulingViewer(viewer);
-    this.expireCoverageRequests();
+    await this.expireCoverageRequests();
     const boardWeek = this.resolveBoardWeek(requestedWeekStartDate);
 
     // Keep the board payload limited to week-variant schedule data. Stable
@@ -374,10 +374,10 @@ export class SchedulingService {
     };
   }
 
-  createShift(
+  async createShift(
     viewer: SessionUser,
     body: ShiftMutationRequestBody,
-  ): ShiftResponse {
+  ): Promise<ShiftResponse> {
     const schedulingViewer = this.getSchedulingViewer(viewer);
     this.ensureManagerOrAdmin(schedulingViewer.record);
     const validated = this.validateShiftPayload(body);
@@ -416,8 +416,8 @@ export class SchedulingService {
       ],
     };
 
-    schedulingStore.shifts.push(shift);
-    this.emitSchedulingChange({
+    this.runtimeData.getShifts().push(shift);
+    await this.persistSchedulingChange({
       locationIds: [location.id],
       shiftId: shift.id,
       notifyDashboard: true,
@@ -493,7 +493,7 @@ export class SchedulingService {
       title: 'Shift updated',
       body: `${shift.title} at ${location.name} was updated.`,
     });
-    this.emitSchedulingChange({
+    await this.persistSchedulingChange({
       locationIds: [location.id],
       shiftId: shift.id,
       notifyCoverage: true,
@@ -594,7 +594,7 @@ export class SchedulingService {
       });
     }
 
-    this.emitSchedulingChange({
+    await this.persistSchedulingChange({
       locationIds: [shift.locationId],
       shiftId: shift.id,
       notifyCoverage: true,
@@ -650,7 +650,7 @@ export class SchedulingService {
       });
     }
 
-    this.emitSchedulingChange({
+    await this.persistSchedulingChange({
       locationIds: [shift.locationId],
       shiftId: shift.id,
       notifyCoverage: true,
@@ -688,7 +688,7 @@ export class SchedulingService {
       title: 'Schedule published',
       body: `${shift.title} has been published to staff.`,
     });
-    this.emitSchedulingChange({
+    await this.persistSchedulingChange({
       locationIds: [shift.locationId],
       shiftId: shift.id,
       notifyDashboard: true,
@@ -723,7 +723,7 @@ export class SchedulingService {
       title: 'Shift moved back to draft',
       body: `${shift.title} is no longer published.`,
     });
-    this.emitSchedulingChange({
+    await this.persistSchedulingChange({
       locationIds: [shift.locationId],
       shiftId: shift.id,
       notifyDashboard: true,
@@ -780,7 +780,7 @@ export class SchedulingService {
       }
     }
 
-    this.emitSchedulingChange({
+    await this.persistSchedulingChange({
       locationIds: visibleShifts.map((shift) => shift.locationId),
       notifyDashboard: true,
     });
@@ -788,10 +788,10 @@ export class SchedulingService {
     return this.getSchedulingBoard(viewer, boardWeek.weekStartDate);
   }
 
-  unpublishVisibleWeek(
+  async unpublishVisibleWeek(
     viewer: SessionUser,
     requestedWeekStartDate?: string,
-  ): SchedulingBoardResponse {
+  ): Promise<SchedulingBoardResponse> {
     const schedulingViewer = this.getSchedulingViewer(viewer);
     this.ensureManagerOrAdmin(schedulingViewer.record);
     const boardWeek = this.resolveBoardWeek(requestedWeekStartDate);
@@ -824,7 +824,7 @@ export class SchedulingService {
       );
     });
 
-    this.emitSchedulingChange({
+    await this.persistSchedulingChange({
       locationIds: editablePublishedShifts.map((shift) => shift.locationId),
       notifyDashboard: true,
     });
@@ -832,11 +832,12 @@ export class SchedulingService {
     return this.getSchedulingBoard(viewer, boardWeek.weekStartDate);
   }
 
-  getCoverageBoard(viewer: SessionUser): CoverageBoardResponse {
+  async getCoverageBoard(viewer: SessionUser): Promise<CoverageBoardResponse> {
     const schedulingViewer = this.getSchedulingViewer(viewer);
-    this.expireCoverageRequests();
+    await this.expireCoverageRequests();
 
-    const visibleRequests = schedulingStore.coverageRequests
+    const visibleRequests = this.runtimeData
+      .getCoverageRequests()
       .filter((request) =>
         this.canViewerSeeCoverageRequest(schedulingViewer.record, request),
       )
@@ -850,11 +851,12 @@ export class SchedulingService {
     };
   }
 
-  getCoverageRequestOptions(
+  async getCoverageRequestOptions(
     viewer: SessionUser,
     shiftId: string,
-  ): CoverageRequestOptionsResponse {
+  ): Promise<CoverageRequestOptionsResponse> {
     const schedulingViewer = this.getSchedulingViewer(viewer);
+    await this.expireCoverageRequests();
     this.ensureStaff(schedulingViewer.record);
 
     const shift = this.getAccessibleShift(shiftId, schedulingViewer.record);
@@ -941,7 +943,7 @@ export class SchedulingService {
         `${schedulingViewer.name} requested a swap with ${counterpart.name}.`,
     };
 
-    schedulingStore.coverageRequests.push(request);
+    this.runtimeData.getCoverageRequests().push(request);
     shift.auditTrail.push(
       this.createAuditEntry(
         schedulingViewer,
@@ -957,7 +959,7 @@ export class SchedulingService {
       body: `${schedulingViewer.name} asked to swap ${shift.title} with you.`,
     });
 
-    this.emitSchedulingChange({
+    await this.persistSchedulingChange({
       locationIds: [shift.locationId],
       requestId: request.id,
       shiftId: shift.id,
@@ -1004,7 +1006,7 @@ export class SchedulingService {
         `${schedulingViewer.name} asked the team to cover ${shift.title}.`,
     };
 
-    schedulingStore.coverageRequests.push(request);
+    this.runtimeData.getCoverageRequests().push(request);
     shift.auditTrail.push(
       this.createAuditEntry(
         schedulingViewer,
@@ -1023,7 +1025,7 @@ export class SchedulingService {
       body: `${schedulingViewer.name} opened coverage for ${shift.title}.`,
     });
 
-    this.emitSchedulingChange({
+    await this.persistSchedulingChange({
       locationIds: [shift.locationId],
       requestId: request.id,
       shiftId: shift.id,
@@ -1043,7 +1045,7 @@ export class SchedulingService {
   ): Promise<CoverageActionResponse> {
     const schedulingViewer = this.getSchedulingViewer(viewer);
     this.ensureStaff(schedulingViewer.record);
-    this.expireCoverageRequests();
+    await this.expireCoverageRequests();
 
     const request = this.getCoverageRequestById(requestId);
 
@@ -1087,7 +1089,7 @@ export class SchedulingService {
       body: `${counterpart.name} accepted a swap for ${shift.title}.`,
     });
 
-    this.emitSchedulingChange({
+    await this.persistSchedulingChange({
       locationIds: [shift.locationId],
       requestId: request.id,
       shiftId: shift.id,
@@ -1107,7 +1109,7 @@ export class SchedulingService {
   ): Promise<CoverageActionResponse> {
     const schedulingViewer = this.getSchedulingViewer(viewer);
     this.ensureStaff(schedulingViewer.record);
-    this.expireCoverageRequests();
+    await this.expireCoverageRequests();
 
     const request = this.getCoverageRequestById(requestId);
 
@@ -1136,7 +1138,7 @@ export class SchedulingService {
       body: `${schedulingViewer.name} declined the swap for ${shift.title}.`,
     });
 
-    this.emitSchedulingChange({
+    await this.persistSchedulingChange({
       locationIds: [shift.locationId],
       requestId: request.id,
       shiftId: shift.id,
@@ -1156,7 +1158,7 @@ export class SchedulingService {
   ): Promise<CoverageActionResponse> {
     const schedulingViewer = this.getSchedulingViewer(viewer);
     this.ensureStaff(schedulingViewer.record);
-    this.expireCoverageRequests();
+    await this.expireCoverageRequests();
 
     const request = this.getCoverageRequestById(requestId);
 
@@ -1199,7 +1201,7 @@ export class SchedulingService {
       body: `${claimant.name} claimed ${shift.title}.`,
     });
 
-    this.emitSchedulingChange({
+    await this.persistSchedulingChange({
       locationIds: [shift.locationId],
       requestId: request.id,
       shiftId: shift.id,
@@ -1219,7 +1221,7 @@ export class SchedulingService {
   ): Promise<CoverageActionResponse> {
     const schedulingViewer = this.getSchedulingViewer(viewer);
     this.ensureStaff(schedulingViewer.record);
-    this.expireCoverageRequests();
+    await this.expireCoverageRequests();
 
     const request = this.getCoverageRequestById(requestId);
 
@@ -1265,7 +1267,7 @@ export class SchedulingService {
       body: `${schedulingViewer.name} withdrew the request for ${shift.title}.`,
     });
 
-    this.emitSchedulingChange({
+    await this.persistSchedulingChange({
       locationIds: [shift.locationId],
       requestId: request.id,
       shiftId: shift.id,
@@ -1285,7 +1287,7 @@ export class SchedulingService {
   ): Promise<CoverageActionResponse> {
     const schedulingViewer = this.getSchedulingViewer(viewer);
     this.ensureManagerOrAdmin(schedulingViewer.record);
-    this.expireCoverageRequests();
+    await this.expireCoverageRequests();
 
     const request = this.getCoverageRequestById(requestId);
     const shift = this.getAccessibleShift(
@@ -1367,7 +1369,7 @@ export class SchedulingService {
       title: 'Coverage approved',
       body: `${shift.title} coverage has been approved.`,
     });
-    this.emitSchedulingChange({
+    await this.persistSchedulingChange({
       locationIds: [shift.locationId],
       shiftId: shift.id,
       requestId: request.id,
@@ -1439,7 +1441,7 @@ export class SchedulingService {
       title: 'Coverage request cancelled',
       body: `${shift.title} coverage request is no longer active.`,
     });
-    this.emitSchedulingChange({
+    await this.persistSchedulingChange({
       locationIds: [shift.locationId],
       shiftId: shift.id,
       requestId: request.id,
@@ -1503,7 +1505,7 @@ export class SchedulingService {
   }
 
   private getSchedulingViewer(viewer: SessionUser): SchedulingViewer {
-    const record = getUserById(viewer.id);
+    const record = this.runtimeData.getUserById(viewer.id);
 
     if (!record) {
       throw new ForbiddenException('Viewer session could not be resolved.');
@@ -1548,7 +1550,7 @@ export class SchedulingService {
   }
 
   private toScheduleStaffResponse(staff: StaffRecord): ScheduleStaffResponse {
-    const desiredHours = schedulingStore.desiredHoursByUserId[staff.id];
+    const desiredHours = this.runtimeData.getDesiredHoursByUserId()[staff.id];
 
     if (typeof desiredHours !== 'number') {
       throw new BadRequestException(
@@ -1567,7 +1569,7 @@ export class SchedulingService {
 
   private getVisibleLocationsForViewer(viewer: User) {
     if (viewer.role === 'admin') {
-      return [...schedulingStore.locations];
+      return [...this.runtimeData.getLocations()];
     }
 
     const allowedLocationIds =
@@ -1575,9 +1577,9 @@ export class SchedulingService {
         ? viewer.managedLocationIds
         : viewer.certifiedLocationIds;
 
-    return schedulingStore.locations.filter((location) =>
-      allowedLocationIds.includes(location.id),
-    );
+    return this.runtimeData
+      .getLocations()
+      .filter((location) => allowedLocationIds.includes(location.id));
   }
 
   private getVisibleLocationIdsForViewer(viewer: User) {
@@ -1589,7 +1591,8 @@ export class SchedulingService {
   private getVisibleStaffForViewer(viewer: User) {
     const visibleLocationIds = this.getVisibleLocationIdsForViewer(viewer);
 
-    return getAllUsers()
+    return this.runtimeData
+      .getAllUsers()
       .filter(isStaffRecord)
       .filter((staff) => {
         if (viewer.role === 'staff') {
@@ -1605,9 +1608,9 @@ export class SchedulingService {
   private getVisibleShiftsForViewer(viewer: User) {
     const visibleLocationIds = this.getVisibleLocationIdsForViewer(viewer);
 
-    return schedulingStore.shifts.filter((shift) =>
-      visibleLocationIds.has(shift.locationId),
-    );
+    return this.runtimeData
+      .getShifts()
+      .filter((shift) => visibleLocationIds.has(shift.locationId));
   }
 
   private getVisibleShiftsForWeek(
@@ -1620,9 +1623,9 @@ export class SchedulingService {
   }
 
   private getAccessibleLocation(locationId: string, viewer: User) {
-    const location = schedulingStore.locations.find(
-      (item) => item.id === locationId,
-    );
+    const location = this.runtimeData
+      .getLocations()
+      .find((item) => item.id === locationId);
 
     if (!location) {
       throw new NotFoundException('Location not found.');
@@ -1645,7 +1648,9 @@ export class SchedulingService {
   }
 
   private getShiftById(shiftId: string) {
-    const shift = schedulingStore.shifts.find((item) => item.id === shiftId);
+    const shift = this.runtimeData
+      .getShifts()
+      .find((item) => item.id === shiftId);
 
     if (!shift) {
       throw new NotFoundException('Shift not found.');
@@ -1655,9 +1660,9 @@ export class SchedulingService {
   }
 
   private getCoverageRequestById(requestId: string) {
-    const request = schedulingStore.coverageRequests.find(
-      (item) => item.id === requestId,
-    );
+    const request = this.runtimeData
+      .getCoverageRequests()
+      .find((item) => item.id === requestId);
 
     if (!request) {
       throw new NotFoundException('Coverage request not found.');
@@ -1667,9 +1672,9 @@ export class SchedulingService {
   }
 
   private getLocationById(locationId: string) {
-    const location = schedulingStore.locations.find(
-      (item) => item.id === locationId,
-    );
+    const location = this.runtimeData
+      .getLocations()
+      .find((item) => item.id === locationId);
 
     if (!location) {
       throw new NotFoundException('Location not found.');
@@ -1679,7 +1684,7 @@ export class SchedulingService {
   }
 
   private getStaffOrNull(staffId: string) {
-    const user = getUserById(staffId);
+    const user = this.runtimeData.getUserById(staffId);
     return user && isStaffRecord(user) ? user : null;
   }
 
@@ -1692,13 +1697,15 @@ export class SchedulingService {
   }
 
   private getActiveCoverageRequestsForUser(userId: string) {
-    return schedulingStore.coverageRequests.filter(
-      (request) =>
-        request.requestedByUserId === userId &&
-        (request.status === 'pending_counterparty' ||
-          request.status === 'pending_manager' ||
-          request.status === 'open'),
-    );
+    return this.runtimeData
+      .getCoverageRequests()
+      .filter(
+        (request) =>
+          request.requestedByUserId === userId &&
+          (request.status === 'pending_counterparty' ||
+            request.status === 'pending_manager' ||
+            request.status === 'open'),
+      );
   }
 
   private assertStaffCanCreateCoverageRequest(
@@ -1717,14 +1724,16 @@ export class SchedulingService {
       );
     }
 
-    const existingRequest = schedulingStore.coverageRequests.find(
-      (request) =>
-        request.shiftId === shift.id &&
-        request.requestedByUserId === staffId &&
-        (request.status === 'pending_counterparty' ||
-          request.status === 'pending_manager' ||
-          request.status === 'open'),
-    );
+    const existingRequest = this.runtimeData
+      .getCoverageRequests()
+      .find(
+        (request) =>
+          request.shiftId === shift.id &&
+          request.requestedByUserId === staffId &&
+          (request.status === 'pending_counterparty' ||
+            request.status === 'pending_manager' ||
+            request.status === 'open'),
+      );
 
     if (existingRequest) {
       throw new HttpException(
@@ -1789,7 +1798,8 @@ export class SchedulingService {
   ) {
     const excludedIds = new Set(excludedStaffIds);
 
-    return getAllUsers()
+    return this.runtimeData
+      .getAllUsers()
       .filter(isStaffRecord)
       .filter((staff) => !excludedIds.has(staff.id))
       .map((staff) => ({
@@ -1836,7 +1846,8 @@ export class SchedulingService {
   }
 
   private getManagerAndAdminUserIdsForLocation(locationId: string) {
-    return getAllUsers()
+    return this.runtimeData
+      .getAllUsers()
       .filter((user) => {
         if (user.role === 'admin') {
           return true;
@@ -1868,6 +1879,18 @@ export class SchedulingService {
       title: params.title,
       body: params.body,
     });
+  }
+
+  private async persistSchedulingChange(params: {
+    locationIds: string[];
+    shiftId?: string;
+    requestId?: string;
+    notifyCoverage?: boolean;
+    notifyDashboard?: boolean;
+    userIds?: string[];
+  }) {
+    await this.runtimeData.saveSchedulingState();
+    this.emitSchedulingChange(params);
   }
 
   private emitSchedulingChange(params: {
@@ -2022,7 +2045,8 @@ export class SchedulingService {
         1,
       1,
     );
-    const desiredHours = schedulingStore.desiredHoursByUserId[staff.id] ?? 0;
+    const desiredHours =
+      this.runtimeData.getDesiredHoursByUserId()[staff.id] ?? 0;
     const targetHoursForPeriod = formatHours((desiredHours / 7) * daysInPeriod);
     const desiredHoursDelta = formatHours(assignedHours - targetHoursForPeriod);
     const premiumShiftCount = visibleShifts.filter((shift) => {
@@ -2040,13 +2064,15 @@ export class SchedulingService {
         ) > 0
       );
     }).length;
-    const pendingCoverageRequests = schedulingStore.coverageRequests.filter(
-      (request) =>
-        request.requestedByUserId === staff.id &&
-        (request.status === 'open' ||
-          request.status === 'pending_counterparty' ||
-          request.status === 'pending_manager'),
-    ).length;
+    const pendingCoverageRequests = this.runtimeData
+      .getCoverageRequests()
+      .filter(
+        (request) =>
+          request.requestedByUserId === staff.id &&
+          (request.status === 'open' ||
+            request.status === 'pending_counterparty' ||
+            request.status === 'pending_manager'),
+      ).length;
     const status =
       desiredHoursDelta > 2
         ? 'over'
@@ -2312,11 +2338,13 @@ export class SchedulingService {
     options: { ignoreShiftId?: string; includeSuggestions?: boolean } = {},
   ): AssignmentEvaluation {
     const location = this.getLocationById(shift.locationId);
-    const otherShifts = schedulingStore.shifts.filter(
-      (candidate) =>
-        candidate.id !== (options.ignoreShiftId ?? '') &&
-        candidate.assigneeIds.includes(staff.id),
-    );
+    const otherShifts = this.runtimeData
+      .getShifts()
+      .filter(
+        (candidate) =>
+          candidate.id !== (options.ignoreShiftId ?? '') &&
+          candidate.assigneeIds.includes(staff.id),
+      );
     const getSuggestions = () =>
       options.includeSuggestions === false
         ? undefined
@@ -2681,10 +2709,12 @@ export class SchedulingService {
   }
 
   private getAssignedShiftsForStaff(staffId: string, ignoreShiftId?: string) {
-    return schedulingStore.shifts.filter(
-      (shift) =>
-        shift.id !== ignoreShiftId && shift.assigneeIds.includes(staffId),
-    );
+    return this.runtimeData
+      .getShifts()
+      .filter(
+        (shift) =>
+          shift.id !== ignoreShiftId && shift.assigneeIds.includes(staffId),
+      );
   }
 
   private getOvertimeHoursAddedByShift(
@@ -2812,7 +2842,8 @@ export class SchedulingService {
     assignedStaffIds: string[],
     excludedStaffId?: string,
   ) {
-    return getAllUsers()
+    return this.runtimeData
+      .getAllUsers()
       .filter(isStaffRecord)
       .filter((staff) => staff.id !== excludedStaffId)
       .filter((staff) => !assignedStaffIds.includes(staff.id))
@@ -3175,10 +3206,12 @@ export class SchedulingService {
     return `${Math.max(Math.ceil(difference.hours ?? 0), 1)}h left`;
   }
 
-  private expireCoverageRequests() {
+  private async expireCoverageRequests() {
     const now = DateTime.utc();
+    const expiredShiftIds = new Set<string>();
+    let hasChanges = false;
 
-    schedulingStore.coverageRequests.forEach((request) => {
+    this.runtimeData.getCoverageRequests().forEach((request) => {
       if (request.type !== 'drop') {
         return;
       }
@@ -3191,7 +3224,22 @@ export class SchedulingService {
       if (now >= expiresAt) {
         request.status = 'expired';
         request.updatedAtUtc = now.toISO() ?? '';
+        expiredShiftIds.add(request.shiftId);
+        hasChanges = true;
       }
+    });
+
+    if (!hasChanges) {
+      return;
+    }
+
+    await this.runtimeData.saveSchedulingState();
+    this.emitSchedulingChange({
+      locationIds: Array.from(expiredShiftIds).map(
+        (shiftId) => this.getShiftById(shiftId).locationId,
+      ),
+      notifyCoverage: true,
+      notifyDashboard: true,
     });
   }
 
@@ -3200,7 +3248,7 @@ export class SchedulingService {
     actor: SchedulingViewer,
     reason: string,
   ) {
-    schedulingStore.coverageRequests.forEach((request) => {
+    this.runtimeData.getCoverageRequests().forEach((request) => {
       if (request.shiftId !== shiftId) {
         return;
       }
@@ -3229,13 +3277,15 @@ export class SchedulingService {
   }
 
   private hasActiveCoverageRequest(shiftId: string) {
-    return schedulingStore.coverageRequests.some(
-      (request) =>
-        request.shiftId === shiftId &&
-        (request.status === 'pending_counterparty' ||
-          request.status === 'pending_manager' ||
-          request.status === 'open'),
-    );
+    return this.runtimeData
+      .getCoverageRequests()
+      .some(
+        (request) =>
+          request.shiftId === shiftId &&
+          (request.status === 'pending_counterparty' ||
+            request.status === 'pending_manager' ||
+            request.status === 'open'),
+      );
   }
 
   private getCoverageViewerRelation(
