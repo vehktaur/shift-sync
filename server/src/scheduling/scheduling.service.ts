@@ -564,7 +564,7 @@ export class SchedulingService {
     const schedulingViewer = this.getSchedulingViewer(viewer);
     this.ensureManagerOrAdmin(schedulingViewer.record);
     const shift = this.getAccessibleShift(shiftId, schedulingViewer.record);
-    this.ensureShiftEditable(shift);
+    this.ensureShiftAssignmentsManageable(shift);
     const normalizedOverrideReason = overrideReason?.trim() ?? '';
     const staff = this.getVisibleStaffForViewer(schedulingViewer.record).find(
       (candidate) => candidate.id === staffId,
@@ -665,7 +665,7 @@ export class SchedulingService {
     const schedulingViewer = this.getSchedulingViewer(viewer);
     this.ensureManagerOrAdmin(schedulingViewer.record);
     const shift = this.getAccessibleShift(shiftId, schedulingViewer.record);
-    this.ensureShiftEditable(shift);
+    this.ensureShiftAssignmentsManageable(shift);
 
     if (!shift.assigneeIds.includes(staffId)) {
       return this.buildShiftResponse(shift);
@@ -720,7 +720,7 @@ export class SchedulingService {
     const schedulingViewer = this.getSchedulingViewer(viewer);
     this.ensureManagerOrAdmin(schedulingViewer.record);
     const shift = this.getAccessibleShift(shiftId, schedulingViewer.record);
-    this.ensureShiftEditable(shift);
+    this.ensureShiftPublicationChangeable(shift);
     this.assertShiftPublishReady(shift);
 
     shift.published = true;
@@ -756,7 +756,7 @@ export class SchedulingService {
     const schedulingViewer = this.getSchedulingViewer(viewer);
     this.ensureManagerOrAdmin(schedulingViewer.record);
     const shift = this.getAccessibleShift(shiftId, schedulingViewer.record);
-    this.ensureShiftEditable(shift);
+    this.ensureShiftPublicationChangeable(shift);
 
     shift.published = false;
     shift.updatedByUserId = schedulingViewer.id;
@@ -2365,6 +2365,8 @@ export class SchedulingService {
       premium: shift.premium,
       published: shift.published,
       canEdit: this.isShiftEditable(shift),
+      canManageAssignments: this.canManageShiftAssignments(shift),
+      canChangePublication: this.canChangeShiftPublication(shift),
       state,
       statusSummary,
       suggestions,
@@ -3019,12 +3021,46 @@ export class SchedulingService {
     return startsAtUtc.diffNow('hours').hours > shift.cutoffHours;
   }
 
+  private canManageShiftAssignments(shift: ShiftRecord) {
+    const startsAtUtc = DateTime.fromISO(shift.startsAtUtc, { zone: 'utc' });
+    return startsAtUtc > DateTime.utc();
+  }
+
+  private canChangeShiftPublication(shift: ShiftRecord) {
+    const startsAtUtc = DateTime.fromISO(shift.startsAtUtc, { zone: 'utc' });
+    return startsAtUtc > DateTime.utc();
+  }
+
   private ensureShiftEditable(shift: ShiftRecord) {
     if (!this.isShiftEditable(shift)) {
       throw new HttpException(
         {
           message:
             'This shift is already inside the cutoff window and can no longer be edited.',
+        },
+        HttpStatus.CONFLICT,
+      );
+    }
+  }
+
+  private ensureShiftAssignmentsManageable(shift: ShiftRecord) {
+    if (!this.canManageShiftAssignments(shift)) {
+      throw new HttpException(
+        {
+          message:
+            'This shift has already started and assignments can no longer be changed.',
+        },
+        HttpStatus.CONFLICT,
+      );
+    }
+  }
+
+  private ensureShiftPublicationChangeable(shift: ShiftRecord) {
+    if (!this.canChangeShiftPublication(shift)) {
+      throw new HttpException(
+        {
+          message:
+            'This shift has already started and its publish status can no longer be changed.',
         },
         HttpStatus.CONFLICT,
       );

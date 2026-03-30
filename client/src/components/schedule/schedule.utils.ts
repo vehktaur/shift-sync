@@ -180,7 +180,37 @@ export const applyShiftFormError = (
 };
 
 export const formatProjectedHours = (hours?: number) =>
-  typeof hours === "number" ? `${hours.toFixed(1)}h projected` : null;
+  typeof hours === "number"
+    ? `${hours.toFixed(1)}h after this shift`
+    : null;
+
+type ShiftLockedAction =
+  | "assign"
+  | "edit"
+  | "delete"
+  | "publish"
+  | "save"
+  | "change";
+
+const shiftLockedActionReasons: Record<ShiftLockedAction, string> = {
+  assign:
+    "This shift has already started, so assignments can no longer be changed.",
+  edit: "This shift is inside the cutoff window, so you can no longer edit it.",
+  delete:
+    "This shift is inside the cutoff window, so you can no longer delete it.",
+  publish:
+    "This shift has already started, so its publish status can no longer be changed.",
+  save: "This shift is inside the cutoff window, so you can no longer save detail changes.",
+  change:
+    "This shift is inside the cutoff window, so it can no longer be changed.",
+};
+
+export const getShiftEditLockReason = (
+  action: ShiftLockedAction = "change",
+) => shiftLockedActionReasons[action];
+
+export const getProjectedHoursExplanation = () =>
+  "This is the person's estimated total scheduled hours for the selected week if you assign them to this shift.";
 
 export type ScheduleDayGroup = {
   dayKey: string;

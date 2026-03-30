@@ -30,7 +30,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { getWeekEndDate } from "@/components/schedule/schedule.utils";
+import {
+  getShiftEditLockReason,
+  getWeekEndDate,
+} from "@/components/schedule/schedule.utils";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import type { ShiftFormInputValues, ShiftFormValues } from "@/lib/schemas";
 import type {
   ScheduleLocationResponse,
@@ -141,6 +149,8 @@ export function ShiftFormPanel({
   isSaving,
   onSubmit,
 }: ShiftFormPanelProps) {
+  const publishLockReason = getShiftEditLockReason("publish");
+  const saveLockReason = getShiftEditLockReason("save");
   const {
     mutateAsync: publishShift,
     isPending: publishingShift,
@@ -150,6 +160,7 @@ export function ShiftFormPanel({
     isPending: unpublishingShift,
   } = useUnpublishShift();
   const isPublishing = publishingShift || unpublishingShift;
+  const isDetailEditingLocked = mode === "edit" && shift ? !shift.canEdit : false;
 
   return (
     <div className="space-y-6 p-6" data-tour="shift-form-panel">
@@ -165,6 +176,13 @@ export function ShiftFormPanel({
         <DialogDescription>
           Location, local time, skill, and headcount.
         </DialogDescription>
+        {isDetailEditingLocked && (
+          <p className="text-sm leading-6 text-muted-foreground">
+            Shift details are locked because the cutoff window has passed. You
+            can still use the assignment panel to finish staffing the shift
+            until it starts.
+          </p>
+        )}
       </DialogHeader>
 
       <form
@@ -187,6 +205,7 @@ export function ShiftFormPanel({
                   id="title"
                   placeholder="Friday closing bar"
                   aria-invalid={fieldState.invalid}
+                  disabled={isSaving || isDetailEditingLocked}
                 />
                 <FieldError errors={[fieldState.error]} />
               </Field>
@@ -202,7 +221,7 @@ export function ShiftFormPanel({
                 <Select
                   value={field.value}
                   onValueChange={field.onChange}
-                  disabled={isSaving}
+                  disabled={isSaving || isDetailEditingLocked}
                 >
                   <SelectTrigger
                     id="locationId"
@@ -232,7 +251,7 @@ export function ShiftFormPanel({
                 <Select
                   value={field.value}
                   onValueChange={field.onChange}
-                  disabled={isSaving}
+                  disabled={isSaving || isDetailEditingLocked}
                 >
                   <SelectTrigger
                     id="requiredSkill"
@@ -262,7 +281,7 @@ export function ShiftFormPanel({
                 label="Starts"
                 value={field.value}
                 invalid={fieldState.invalid}
-                disabled={isSaving}
+                disabled={isSaving || isDetailEditingLocked}
                 weekStartDate={weekStartDate}
                 onChange={field.onChange}
                 error={fieldState.error}
@@ -279,7 +298,7 @@ export function ShiftFormPanel({
                 label="Ends"
                 value={field.value}
                 invalid={fieldState.invalid}
-                disabled={isSaving}
+                disabled={isSaving || isDetailEditingLocked}
                 weekStartDate={weekStartDate}
                 onChange={field.onChange}
                 error={fieldState.error}
@@ -300,6 +319,7 @@ export function ShiftFormPanel({
                   min={1}
                   max={12}
                   aria-invalid={fieldState.invalid}
+                  disabled={isSaving || isDetailEditingLocked}
                 />
                 <FieldError errors={[fieldState.error]} />
               </Field>
@@ -317,41 +337,65 @@ export function ShiftFormPanel({
 
         <DialogFooter showCloseButton>
           {shift && (
-            <Button
-              type="button"
-              variant={shift.published ? "outline" : "secondary"}
-              loading={isPublishing}
-              data-tour="shift-publish-button"
-              onClick={async () => {
-                try {
-                  if (shift.published) {
-                    await unpublishShift(shift.id);
-                    toast.success(`${shift.title} moved to draft.`);
-                    return;
-                  }
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span tabIndex={shift.canChangePublication && !isSaving ? -1 : 0}>
+                  <Button
+                    type="button"
+                    variant={shift.published ? "outline" : "secondary"}
+                    loading={isPublishing}
+                    data-tour="shift-publish-button"
+                    onClick={async () => {
+                      try {
+                        if (shift.published) {
+                          await unpublishShift(shift.id);
+                          toast.success(`${shift.title} moved to draft.`);
+                          return;
+                        }
 
-                  await publishShift(shift.id);
-                  toast.success(`${shift.title} published.`);
-                } catch (error) {
-                  toast.error(
-                    getApiErrorMessage(
-                      error,
-                      shift.published
-                        ? "Unable to unpublish shift."
-                        : "Unable to publish shift.",
-                    ),
-                  );
-                }
-              }}
-              disabled={!shift.canEdit || isSaving}
-            >
-              <Send className="size-4" />
-              {shift.published ? "Unpublish shift" : "Publish shift"}
-            </Button>
+                        await publishShift(shift.id);
+                        toast.success(`${shift.title} published.`);
+                      } catch (error) {
+                        toast.error(
+                          getApiErrorMessage(
+                            error,
+                            shift.published
+                              ? "Unable to unpublish shift."
+                              : "Unable to publish shift.",
+                          ),
+                        );
+                      }
+                    }}
+                    disabled={!shift.canChangePublication || isSaving}
+                  >
+                    <Send className="size-4" />
+                    {shift.published ? "Unpublish shift" : "Publish shift"}
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              {!shift.canChangePublication && (
+                <TooltipContent>{publishLockReason}</TooltipContent>
+              )}
+            </Tooltip>
           )}
-          <Button type="submit" loading={isSaving}>
-            {mode === "create" ? "Create shift" : "Save changes"}
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                tabIndex={!isDetailEditingLocked && !isSaving ? -1 : 0}
+              >
+                <Button
+                  type="submit"
+                  loading={isSaving}
+                  disabled={isDetailEditingLocked}
+                >
+                  {mode === "create" ? "Create shift" : "Save changes"}
+                </Button>
+              </span>
+            </TooltipTrigger>
+            {isDetailEditingLocked && (
+              <TooltipContent>{saveLockReason}</TooltipContent>
+            )}
+          </Tooltip>
         </DialogFooter>
       </form>
     </div>

@@ -5,7 +5,11 @@ import axios from "axios";
 import { AlertTriangle, Trash2, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 
-import { formatProjectedHours } from "@/components/schedule/schedule.utils";
+import {
+  formatProjectedHours,
+  getProjectedHoursExplanation,
+  getShiftEditLockReason,
+} from "@/components/schedule/schedule.utils";
 import { useActiveScheduleShift } from "@/components/schedule/use-schedule-board-data";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,6 +23,11 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   useAssignStaff,
   useRemoveShiftAssignee,
@@ -76,6 +85,8 @@ export function ShiftAssignmentPanel() {
     isPending: removingAssignee,
     variables: removingAssigneeId,
   } = useRemoveShiftAssignee(shift?.id ?? null);
+  const assignLockReason = getShiftEditLockReason("assign");
+  const projectedHoursExplanation = getProjectedHoursExplanation();
 
   const handleAssign = async (staff: EligibleStaffResponse["staff"]) => {
     try {
@@ -110,8 +121,23 @@ export function ShiftAssignmentPanel() {
             {shift ? "Eligible staff for this shift" : "Save the shift first"}
           </h3>
           <p className="text-sm leading-6 text-muted-foreground">
-            Staff who match this shift.
+            Staff who match this shift. The hours badge shows what each
+            person&apos;s total for the selected week would be after taking this
+            shift.
           </p>
+          {shift && !shift.canEdit && shift.canManageAssignments && (
+            <p className="text-sm leading-6 text-muted-foreground">
+              Shift details are locked because the cutoff window has passed, but
+              you can still finish staffing it until the shift starts.
+            </p>
+          )}
+          {shift && !shift.canManageAssignments && (
+            <p className="text-sm leading-6 text-muted-foreground">
+              This shift has already started. People can still appear here
+              because they fit the shift, but assignments can no longer be
+              changed.
+            </p>
+          )}
         </div>
 
         {shift && (
@@ -145,7 +171,7 @@ export function ShiftAssignmentPanel() {
                       <div>
                         <p className="text-sm font-medium">{assignee.name}</p>
                       </div>
-                      {shift.canEdit && (
+                      {shift.canManageAssignments && (
                         <Button
                           type="button"
                           size="sm"
@@ -210,32 +236,50 @@ export function ShiftAssignmentPanel() {
                           </p>
                         </div>
 
-                        <Button
-                          type="button"
-                          size="xs"
-                          loading={
-                            assigningStaff &&
-                            assigningStaffPayload?.staffId === option.staff.id
-                          }
-                          disabled={!shift.canEdit}
-                          onClick={() => {
-                            void handleAssign(option.staff);
-                          }}
-                        >
-                          <UserPlus className="size-4" />
-                          Assign
-                        </Button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span
+                              tabIndex={shift.canManageAssignments ? -1 : 0}
+                            >
+                              <Button
+                                type="button"
+                                size="xs"
+                                loading={
+                                  assigningStaff &&
+                                  assigningStaffPayload?.staffId === option.staff.id
+                                }
+                                disabled={!shift.canManageAssignments}
+                                onClick={() => {
+                                  void handleAssign(option.staff);
+                                }}
+                              >
+                                <UserPlus className="size-4" />
+                                Assign
+                              </Button>
+                            </span>
+                          </TooltipTrigger>
+                          {!shift.canManageAssignments && (
+                            <TooltipContent>{assignLockReason}</TooltipContent>
+                          )}
+                        </Tooltip>
                       </div>
 
                       <div className="flex flex-wrap gap-2 text-xs">
-                          <Badge variant="outline">
+                        <Badge variant="outline">
                           Target hours: {option.staff.desiredHours}h
                         </Badge>
                         <Badge variant="outline">
                           Skills: {option.staff.skills.join(", ")}
                         </Badge>
                         {projectedHours && (
-                          <Badge variant="outline">{projectedHours}</Badge>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Badge variant="outline">{projectedHours}</Badge>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              {projectedHoursExplanation}
+                            </TooltipContent>
+                          </Tooltip>
                         )}
                       </div>
 

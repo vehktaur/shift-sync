@@ -155,6 +155,8 @@ export type ShiftResponse = {
   premium: boolean;
   published: boolean;
   canEdit: boolean;
+  canManageAssignments: boolean;
+  canChangePublication: boolean;
   state: ShiftState;
   statusSummary: string;
   suggestions?: StaffSummaryResponse[];

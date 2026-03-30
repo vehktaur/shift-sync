@@ -41,6 +41,7 @@ import { useScheduleUiStore } from "@/stores/schedule-ui-store";
 import type { ShiftResponse } from "@/types/scheduling";
 
 import {
+  getShiftEditLockReason,
   shiftStateBadgeVariant,
   shiftStateDescriptions,
   shiftStateLabels,
@@ -71,6 +72,14 @@ export function ShiftCard({ shift }: ShiftCardProps) {
     variables: unpublishingShiftId,
   } = useUnpublishShift();
   const { canManageBoard } = useScheduleBoardData();
+  const editLockReason = getShiftEditLockReason("edit");
+  const publishLockReason = getShiftEditLockReason("publish");
+  const deleteLockReason = getShiftEditLockReason("delete");
+  const manageLabel = shift.canEdit
+    ? "Manage"
+    : shift.canManageAssignments || shift.canChangePublication
+      ? "Staff"
+      : "View";
   const isDeleting = deletingShift && deletingShiftId === shift.id;
   const isPublishing = publishingShift && publishingShiftId === shift.id;
   const isUnpublishing = unpublishingShift && unpublishingShiftId === shift.id;
@@ -100,60 +109,85 @@ export function ShiftCard({ shift }: ShiftCardProps) {
 
           {canManageBoard && (
             <div className="flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => openEditDialog(shift.id)}
-                disabled={!shift.canEdit}
-              >
-                <PencilLine className="size-4" />
-                Edit
-              </Button>
-              <Button
-                size="sm"
-                variant={shift.published ? "outline" : "default"}
-                data-tour={!shift.published ? "shift-publish-button" : undefined}
-                onClick={async () => {
-                  try {
-                    if (shift.published) {
-                      await unpublishShift(shift.id);
-                      toast.success(`${shift.title} moved to draft.`);
-                      return;
-                    }
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span tabIndex={shift.canChangePublication ? -1 : 0}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openEditDialog(shift.id)}
+                      disabled={!shift.canEdit}
+                    >
+                      <PencilLine className="size-4" />
+                      Edit
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                {!shift.canEdit && <TooltipContent>{editLockReason}</TooltipContent>}
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span tabIndex={shift.canEdit ? -1 : 0}>
+                    <Button
+                      size="sm"
+                      variant={shift.published ? "outline" : "default"}
+                      data-tour={!shift.published ? "shift-publish-button" : undefined}
+                      onClick={async () => {
+                        try {
+                          if (shift.published) {
+                            await unpublishShift(shift.id);
+                            toast.success(`${shift.title} moved to draft.`);
+                            return;
+                          }
 
-                    await publishShift(shift.id);
-                    toast.success(`${shift.title} published.`);
-                  } catch (error) {
-                    toast.error(
-                      getApiErrorMessage(
-                        error,
-                        shift.published
-                          ? "Unable to unpublish shift."
-                          : "Unable to publish shift.",
-                      ),
-                    );
-                  }
-                }}
-                disabled={!shift.canEdit}
-                loading={shift.published ? isUnpublishing : isPublishing}
-              >
-                <Send className="size-4" />
-                {shift.published ? "Unpublish" : "Publish"}
-              </Button>
+                          await publishShift(shift.id);
+                          toast.success(`${shift.title} published.`);
+                        } catch (error) {
+                          toast.error(
+                            getApiErrorMessage(
+                              error,
+                              shift.published
+                                ? "Unable to unpublish shift."
+                                : "Unable to publish shift.",
+                            ),
+                          );
+                        }
+                      }}
+                      disabled={!shift.canChangePublication}
+                      loading={shift.published ? isUnpublishing : isPublishing}
+                    >
+                      <Send className="size-4" />
+                      {shift.published ? "Unpublish" : "Publish"}
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                {!shift.canChangePublication && (
+                  <TooltipContent>{publishLockReason}</TooltipContent>
+                )}
+              </Tooltip>
               <AlertDialog
                 open={deleteDialogOpen}
                 onOpenChange={setDeleteDialogOpen}
               >
-                <AlertDialogTrigger asChild>
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    disabled={!shift.canEdit}
-                  >
-                    <Trash2 className="size-4" />
-                    Delete
-                  </Button>
-                </AlertDialogTrigger>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span tabIndex={shift.canEdit ? -1 : 0}>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          disabled={!shift.canEdit}
+                        >
+                          <Trash2 className="size-4" />
+                          Delete
+                        </Button>
+                      </AlertDialogTrigger>
+                    </span>
+                  </TooltipTrigger>
+                  {!shift.canEdit && (
+                    <TooltipContent>{deleteLockReason}</TooltipContent>
+                  )}
+                </Tooltip>
                 <AlertDialogContent>
                   <AlertDialogHeader>
                     <AlertDialogTitle>Delete shift?</AlertDialogTitle>
@@ -270,6 +304,12 @@ export function ShiftCard({ shift }: ShiftCardProps) {
             <h3 className="text-sm font-semibold text-foreground">
               Suggested alternatives
             </h3>
+            <p className="text-xs leading-6 text-muted-foreground">
+              These are the strongest matches based on skill, location
+              certification, availability, scheduling rule checks, and the
+              person&apos;s projected weekly hours. A locked shift can still show
+              suggestions even when assignments are no longer editable.
+            </p>
             <div className="flex flex-wrap gap-2">
               {shift.suggestions.map((staff) => (
                 <div
@@ -296,7 +336,7 @@ export function ShiftCard({ shift }: ShiftCardProps) {
               onClick={() => openEditDialog(shift.id)}
             >
               <UserPlus className="size-4" />
-              Manage
+              {manageLabel}
             </Button>
           )}
         </div>
