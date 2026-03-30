@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -16,6 +17,7 @@ import { SchedulingService } from '../scheduling/scheduling.service';
 import type {
   EligibleStaffResponse,
   SchedulingBoardResponse,
+  ShiftDeletionResponse,
   ShiftReferenceDataResponse,
   ShiftMutationRequestBody,
   ShiftResponse,
@@ -62,6 +64,14 @@ export class ShiftsController {
     @Body() body: ShiftMutationRequestBody,
   ): Promise<ShiftResponse> {
     return this.schedulingService.updateShift(viewer, shiftId, body);
+  }
+
+  @Delete(':shiftId')
+  async deleteShift(
+    @CurrentUser() viewer: SessionUser,
+    @Param('shiftId') shiftId: string,
+  ): Promise<ShiftDeletionResponse> {
+    return this.schedulingService.deleteShift(viewer, shiftId);
   }
 
   @Post(':shiftId/publish')

@@ -40,9 +40,20 @@ export function NotificationsFeatureView() {
     isError: preferencesError,
     refetch: refetchPreferences,
   } = useNotificationPreferences();
-  const markReadMutation = useMarkNotificationRead();
-  const markAllReadMutation = useMarkAllNotificationsRead();
-  const updatePreferencesMutation = useUpdateNotificationPreferences();
+  const {
+    mutate: markNotificationRead,
+    isPending: markingNotificationRead,
+    variables: markingNotificationReadId,
+  } = useMarkNotificationRead();
+  const {
+    mutate: markAllNotificationsRead,
+    isPending: markingAllNotificationsRead,
+  } = useMarkAllNotificationsRead();
+  const {
+    mutate: updateNotificationPreferences,
+    isPending: updatingNotificationPreferences,
+    variables: updatingNotificationPreferencePayload,
+  } = useUpdateNotificationPreferences();
 
   if (centerPending || preferencesPending) {
     return <NotificationsSkeleton />;
@@ -83,9 +94,9 @@ export function NotificationsFeatureView() {
           </div>
           <Button
             variant="outline"
-            loading={markAllReadMutation.isPending}
+            loading={markingAllNotificationsRead}
             onClick={() => {
-              markAllReadMutation.mutate();
+              markAllNotificationsRead();
             }}
           >
             Mark all read
@@ -132,11 +143,11 @@ export function NotificationsFeatureView() {
                           variant="outline"
                           size="sm"
                           loading={
-                            markReadMutation.isPending &&
-                            markReadMutation.variables === notification.id
+                            markingNotificationRead &&
+                            markingNotificationReadId === notification.id
                           }
                           onClick={() => {
-                            markReadMutation.mutate(notification.id);
+                            markNotificationRead(notification.id);
                           }}
                         >
                           Mark read
@@ -175,14 +186,14 @@ export function NotificationsFeatureView() {
                     variant={enabled ? "default" : "outline"}
                     size="sm"
                     loading={
-                      updatePreferencesMutation.isPending &&
+                      updatingNotificationPreferences &&
                       Object.prototype.hasOwnProperty.call(
-                        updatePreferencesMutation.variables ?? {},
+                        updatingNotificationPreferencePayload ?? {},
                         preference.key,
                       )
                     }
                     onClick={() => {
-                      updatePreferencesMutation.mutate({
+                      updateNotificationPreferences({
                         [preference.key]: !enabled,
                       });
                     }}

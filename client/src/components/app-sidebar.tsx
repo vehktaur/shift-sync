@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import axios from "axios";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -11,6 +11,16 @@ import { authQueryKeys, logout } from "@/lib/api/auth";
 import { useSession } from "@/hooks/use-auth";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { WorkspaceNav } from "@/components/workspace-nav";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -41,13 +51,14 @@ const getInitials = (name: string) =>
     .toUpperCase();
 
 const AppSidebar = () => {
+  const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
   const { isMobile, open } = useSidebar();
   const router = useRouter();
   const queryClient = useQueryClient();
   const compact = !open && !isMobile;
   const { data: session, error: sessionError } = useSession();
 
-  const logoutMutation = useMutation({
+  const {  mutateAsync: logOut, isPending: loggingOut } = useMutation({
     mutationFn: logout,
     onSuccess: () => {
       queryClient.removeQueries({ queryKey: authQueryKeys.currentUser });
@@ -73,6 +84,14 @@ const AppSidebar = () => {
 
   const currentUser = session?.user;
   const initials = currentUser ? getInitials(currentUser.name) : "SS";
+  const handleLogout = async () => {
+    try {
+      await logOut();
+      setLogoutDialogOpen(false);
+    } catch {
+      // The mutation already surfaces API errors to the user.
+    }
+  };
   const headerAction = isMobile ? (
     <SidebarTrigger
       variant="outline"
@@ -175,8 +194,8 @@ const AppSidebar = () => {
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem
-                onSelect={() => logoutMutation.mutate()}
-                disabled={logoutMutation.isPending}
+                onSelect={() => setLogoutDialogOpen(true)}
+                disabled={loggingOut}
                 variant="destructive"
               >
                 <LogOut className="size-4" />
@@ -222,8 +241,8 @@ const AppSidebar = () => {
                 variant="destructive"
                 size="sm"
                 className="w-full gap-2"
-                onClick={() => logoutMutation.mutate()}
-                loading={logoutMutation.isPending}
+                onClick={() => setLogoutDialogOpen(true)}
+                loading={loggingOut}
               >
                 <LogOut className="size-4" />
                 Logout
@@ -232,6 +251,31 @@ const AppSidebar = () => {
           </div>
         )}
       </SidebarFooter>
+
+      <AlertDialog open={logoutDialogOpen} onOpenChange={setLogoutDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Sign out?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You&apos;ll be returned to the login screen for ShiftSync.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={loggingOut}>
+              Stay signed in
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={loggingOut}
+              onClick={async (event) => {
+                event.preventDefault();
+                await handleLogout();
+              }}
+            >
+              {loggingOut ? "Signing out..." : "Sign out"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Sidebar>
   );
 };

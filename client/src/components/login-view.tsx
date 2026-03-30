@@ -44,7 +44,7 @@ export function LoginView() {
     defaultValues: ADMIN_LOGIN_DEFAULTS,
   });
 
-  const loginMutation = useMutation({
+  const { mutate: logIn, isPending: loggingIn } = useMutation({
     mutationFn: login,
     onSuccess: (response) => {
       queryClient.setQueryData(authQueryKeys.currentUser, {
@@ -62,7 +62,7 @@ export function LoginView() {
   });
 
   const onSubmit: SubmitHandler<LoginFormValues> = (values) => {
-    loginMutation.mutate(values);
+    logIn(values);
   };
   const demoAccounts = demoAccountsResponse?.accounts ?? [];
 
@@ -139,7 +139,7 @@ export function LoginView() {
               <Button
                 type="submit"
                 className="w-full"
-                loading={loginMutation.isPending}
+                loading={loggingIn}
                 size="lg"
               >
                 Sign In

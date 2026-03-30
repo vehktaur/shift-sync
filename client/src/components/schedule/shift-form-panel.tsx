@@ -141,10 +141,15 @@ export function ShiftFormPanel({
   isSaving,
   onSubmit,
 }: ShiftFormPanelProps) {
-  const publishShiftMutation = usePublishShift();
-  const unpublishShiftMutation = useUnpublishShift();
-  const isPublishing =
-    publishShiftMutation.isPending || unpublishShiftMutation.isPending;
+  const {
+    mutateAsync: publishShift,
+    isPending: publishingShift,
+  } = usePublishShift();
+  const {
+    mutateAsync: unpublishShift,
+    isPending: unpublishingShift,
+  } = useUnpublishShift();
+  const isPublishing = publishingShift || unpublishingShift;
 
   return (
     <div className="space-y-6 p-6" data-tour="shift-form-panel">
@@ -320,12 +325,12 @@ export function ShiftFormPanel({
               onClick={async () => {
                 try {
                   if (shift.published) {
-                    await unpublishShiftMutation.mutateAsync(shift.id);
+                    await unpublishShift(shift.id);
                     toast.success(`${shift.title} moved to draft.`);
                     return;
                   }
 
-                  await publishShiftMutation.mutateAsync(shift.id);
+                  await publishShift(shift.id);
                   toast.success(`${shift.title} published.`);
                 } catch (error) {
                   toast.error(

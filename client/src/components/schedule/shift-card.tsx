@@ -1,15 +1,28 @@
+import { useState } from "react";
 import {
   CalendarRange,
   Clock3,
   PencilLine,
   Send,
   ShieldAlert,
+  Trash2,
   UserPlus,
   Users,
 } from "lucide-react";
 import { toast } from "sonner";
 
 import { useScheduleBoardData } from "@/components/schedule/use-schedule-board-data";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,7 +31,11 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { usePublishShift, useUnpublishShift } from "@/hooks/use-scheduling";
+import {
+  useDeleteShift,
+  usePublishShift,
+  useUnpublishShift,
+} from "@/hooks/use-scheduling";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { useScheduleUiStore } from "@/stores/schedule-ui-store";
 import type { ShiftResponse } from "@/types/scheduling";
@@ -34,16 +51,27 @@ type ShiftCardProps = {
 };
 
 export function ShiftCard({ shift }: ShiftCardProps) {
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const openEditDialog = useScheduleUiStore((state) => state.openEditDialog);
-  const publishShiftMutation = usePublishShift();
-  const unpublishShiftMutation = useUnpublishShift();
+  const {
+    mutateAsync: deleteShift,
+    isPending: deletingShift,
+    variables: deletingShiftId,
+  } = useDeleteShift();
+  const {
+    mutateAsync: publishShift,
+    isPending: publishingShift,
+    variables: publishingShiftId,
+  } = usePublishShift();
+  const {
+    mutateAsync: unpublishShift,
+    isPending: unpublishingShift,
+    variables: unpublishingShiftId,
+  } = useUnpublishShift();
   const { canManageBoard } = useScheduleBoardData();
-  const isPublishing =
-    publishShiftMutation.isPending &&
-    publishShiftMutation.variables === shift.id;
-  const isUnpublishing =
-    unpublishShiftMutation.isPending &&
-    unpublishShiftMutation.variables === shift.id;
+  const isDeleting = deletingShift && deletingShiftId === shift.id;
+  const isPublishing = publishingShift && publishingShiftId === shift.id;
+  const isUnpublishing = unpublishingShift && unpublishingShiftId === shift.id;
 
   return (
     <Card className="border-white/70 bg-white/85" data-tour="shift-card">
@@ -86,12 +114,12 @@ export function ShiftCard({ shift }: ShiftCardProps) {
                 onClick={async () => {
                   try {
                     if (shift.published) {
-                      await unpublishShiftMutation.mutateAsync(shift.id);
+                      await unpublishShift(shift.id);
                       toast.success(`${shift.title} moved to draft.`);
                       return;
                     }
 
-                    await publishShiftMutation.mutateAsync(shift.id);
+                    await publishShift(shift.id);
                     toast.success(`${shift.title} published.`);
                   } catch (error) {
                     toast.error(
@@ -110,6 +138,54 @@ export function ShiftCard({ shift }: ShiftCardProps) {
                 <Send className="size-4" />
                 {shift.published ? "Unpublish" : "Publish"}
               </Button>
+              <AlertDialog
+                open={deleteDialogOpen}
+                onOpenChange={setDeleteDialogOpen}
+              >
+                <AlertDialogTrigger asChild>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    disabled={!shift.canEdit}
+                  >
+                    <Trash2 className="size-4" />
+                    Delete
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete shift?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      {shift.published
+                        ? `This will remove ${shift.title}, its assignments, and any related coverage requests. Assigned staff will be notified.`
+                        : `This will remove ${shift.title} and any related coverage requests.`}
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel disabled={isDeleting}>
+                      Keep shift
+                    </AlertDialogCancel>
+                    <AlertDialogAction
+                      disabled={isDeleting}
+                      onClick={async (event) => {
+                        event.preventDefault();
+
+                        try {
+                          await deleteShift(shift.id);
+                          setDeleteDialogOpen(false);
+                          toast.success(`${shift.title} deleted.`);
+                        } catch (error) {
+                          toast.error(
+                            getApiErrorMessage(error, "Unable to delete shift."),
+                          );
+                        }
+                      }}
+                    >
+                      {isDeleting ? "Deleting..." : "Delete shift"}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </div>
           )}
         </div>

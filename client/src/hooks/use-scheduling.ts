@@ -9,6 +9,7 @@ import {
   cancelCoverageRequest,
   claimCoverageRequest,
   createDropRequest,
+  deleteShift,
   createShift,
   createSwapRequest,
   getCoverageBoard,
@@ -210,6 +211,17 @@ export const useUpdateShift = (weekStartDate: string) => {
         }),
         invalidateCoverageQueries(queryClient, shift.id),
       ]);
+    },
+  });
+};
+
+export const useDeleteShift = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: deleteShift,
+    onSuccess: async (_, shiftId) => {
+      await invalidateCoverageQueries(queryClient, shiftId);
     },
   });
 };

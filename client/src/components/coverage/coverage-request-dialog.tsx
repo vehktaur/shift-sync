@@ -64,11 +64,16 @@ export function CoverageRequestDialog({
     isPending: optionsPending,
     isError: optionsHasError,
   } = useCoverageRequestOptions(open ? shift?.id ?? null : null);
-  const createSwapRequestMutation = useCreateSwapRequest();
-  const createDropRequestMutation = useCreateDropRequest();
+  const {
+    mutateAsync: createSwapRequest,
+    isPending: creatingSwapRequest,
+  } = useCreateSwapRequest();
+  const {
+    mutateAsync: createDropRequest,
+    isPending: creatingDropRequest,
+  } = useCreateDropRequest();
   const isLoadingOptions = optionsPending && Boolean(shift?.id);
-  const isSubmitting =
-    createSwapRequestMutation.isPending || createDropRequestMutation.isPending;
+  const isSubmitting = creatingSwapRequest || creatingDropRequest;
   const selectedCounterpartUserId =
     counterpartUserId || options?.eligibleSwapTargets[0]?.id || "";
 
@@ -84,13 +89,13 @@ export function CoverageRequestDialog({
           return;
         }
 
-        await createSwapRequestMutation.mutateAsync({
+        await createSwapRequest({
           shiftId: shift.id,
           counterpartUserId: selectedCounterpartUserId,
           note: note.trim() || undefined,
         });
       } else {
-        await createDropRequestMutation.mutateAsync({
+        await createDropRequest({
           shiftId: shift.id,
           note: note.trim() || undefined,
         });

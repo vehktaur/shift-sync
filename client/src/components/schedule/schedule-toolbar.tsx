@@ -35,8 +35,14 @@ export function ScheduleToolbar() {
     );
   const weekStartDate = useWorkspaceStore((state) => state.weekStartDate);
   const { data: locationsData } = useLocations();
-  const publishWeekMutation = usePublishWeek(weekStartDate);
-  const unpublishWeekMutation = useUnpublishWeek(weekStartDate);
+  const {
+    mutateAsync: publishWeek,
+    isPending: publishingWeek,
+  } = usePublishWeek(weekStartDate);
+  const {
+    mutateAsync: unpublishWeek,
+    isPending: unpublishingWeek,
+  } = useUnpublishWeek(weekStartDate);
   const { canManageBoard, scheduleBoard } = useScheduleBoardData();
   const locations = locationsData ?? [];
 
@@ -99,10 +105,10 @@ export function ScheduleToolbar() {
           <div className="flex flex-wrap gap-3 xl:justify-end">
             <Button
               variant="outline"
-              loading={unpublishWeekMutation.isPending}
+              loading={unpublishingWeek}
               onClick={async () => {
                 try {
-                  await unpublishWeekMutation.mutateAsync();
+                  await unpublishWeek();
                   toast.success("Week moved to draft.");
                 } catch (error) {
                   toast.error(
@@ -115,10 +121,10 @@ export function ScheduleToolbar() {
               Unpublish week
             </Button>
             <Button
-              loading={publishWeekMutation.isPending}
+              loading={publishingWeek}
               onClick={async () => {
                 try {
-                  await publishWeekMutation.mutateAsync();
+                  await publishWeek();
                   toast.success("Week published.");
                 } catch (error) {
                   toast.error(

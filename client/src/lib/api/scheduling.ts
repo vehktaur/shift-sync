@@ -7,6 +7,7 @@ import type {
   EligibleStaffResponse,
   ScheduleLocationResponse,
   SchedulingBoardResponse,
+  ShiftDeletionResponse,
   ShiftReferenceDataResponse,
   ShiftAssignmentPayload,
   ShiftAssigneeRemovalPayload,
@@ -64,6 +65,13 @@ export const updateShift = async ({
   const { data } = await apiClient.patch<ShiftResponse>(
     `/shifts/${shiftId}`,
     payload,
+  );
+  return data;
+};
+
+export const deleteShift = async (shiftId: string) => {
+  const { data } = await apiClient.delete<ShiftDeletionResponse>(
+    `/shifts/${shiftId}`,
   );
   return data;
 };

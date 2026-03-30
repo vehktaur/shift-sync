@@ -64,12 +64,20 @@ export function ShiftAssignmentPanel() {
     isPending: eligibleStaffPending,
     isError: eligibleStaffError,
   } = useShiftEligibleStaff(shift?.id ?? null);
-  const assignStaffMutation = useAssignStaff(shift?.id ?? null);
-  const removeAssigneeMutation = useRemoveShiftAssignee(shift?.id ?? null);
+  const {
+    mutateAsync: assignStaff,
+    isPending: assigningStaff,
+    variables: assigningStaffPayload,
+  } = useAssignStaff(shift?.id ?? null);
+  const {
+    mutateAsync: removeAssignee,
+    isPending: removingAssignee,
+    variables: removingAssigneeId,
+  } = useRemoveShiftAssignee(shift?.id ?? null);
 
   const handleAssign = async (staff: EligibleStaffResponse["staff"]) => {
     try {
-      await assignStaffMutation.mutateAsync({ staffId: staff.id });
+      await assignStaff({ staffId: staff.id });
       toast.success(`${staff.name} assigned to ${shift?.title ?? "the shift"}.`);
     } catch (error) {
       if (
@@ -141,14 +149,11 @@ export function ShiftAssignmentPanel() {
                           size="sm"
                           variant="ghost"
                           loading={
-                            removeAssigneeMutation.isPending &&
-                            removeAssigneeMutation.variables === assignee.id
+                            removingAssignee && removingAssigneeId === assignee.id
                           }
                           onClick={async () => {
                             try {
-                              await removeAssigneeMutation.mutateAsync(
-                                assignee.id,
-                              );
+                              await removeAssignee(assignee.id);
                               toast.success(`${assignee.name} removed.`);
                             } catch (error) {
                               toast.error(
@@ -207,9 +212,8 @@ export function ShiftAssignmentPanel() {
                           type="button"
                           size="xs"
                           loading={
-                            assignStaffMutation.isPending &&
-                            assignStaffMutation.variables?.staffId ===
-                              option.staff.id
+                            assigningStaff &&
+                            assigningStaffPayload?.staffId === option.staff.id
                           }
                           disabled={!shift.canEdit}
                           onClick={() => {
@@ -313,8 +317,8 @@ export function ShiftAssignmentPanel() {
             </Button>
             <Button
               loading={
-                assignStaffMutation.isPending &&
-                assignStaffMutation.variables?.staffId === overrideCandidate?.id
+                assigningStaff &&
+                assigningStaffPayload?.staffId === overrideCandidate?.id
               }
               onClick={async () => {
                 if (!overrideCandidate || !shift) {
@@ -327,7 +331,7 @@ export function ShiftAssignmentPanel() {
                 }
 
                 try {
-                  await assignStaffMutation.mutateAsync({
+                  await assignStaff({
                     staffId: overrideCandidate.id,
                     overrideReason: overrideReason.trim(),
                   });

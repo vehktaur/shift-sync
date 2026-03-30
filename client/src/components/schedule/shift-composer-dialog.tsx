@@ -46,8 +46,14 @@ export function ShiftComposerDialog() {
     data: shiftReferenceData,
     isPending: shiftReferenceDataPending,
   } = useShiftReferenceData();
-  const createShiftMutation = useCreateShift();
-  const updateShiftMutation = useUpdateShift(selectedWeekStartDate);
+  const {
+    mutateAsync: createShift,
+    isPending: creatingShift,
+  } = useCreateShift();
+  const {
+    mutateAsync: updateShift,
+    isPending: updatingShift,
+  } = useUpdateShift(selectedWeekStartDate);
   const isComposerOpen = dialogMode !== null;
 
   const form = useForm<ShiftFormInputValues, unknown, ShiftFormValues>({
@@ -125,9 +131,7 @@ export function ShiftComposerDialog() {
           <div className="overflow-y-auto border-b border-border/60 lg:border-r lg:border-b-0">
             <ShiftFormPanel
               form={form}
-              isSaving={
-                createShiftMutation.isPending || updateShiftMutation.isPending
-              }
+              isSaving={creatingShift || updatingShift}
               mode={mode}
               shift={activeShift}
               locations={locations}
@@ -142,11 +146,11 @@ export function ShiftComposerDialog() {
                 try {
                   const savedShift =
                     mode === "edit" && activeShift
-                      ? await updateShiftMutation.mutateAsync({
+                      ? await updateShift({
                           shiftId: activeShift.id,
                           ...payload,
                         })
-                      : await createShiftMutation.mutateAsync(payload);
+                      : await createShift(payload);
 
                   keepComposerOpenForShift(savedShift.id);
                   form.clearErrors("root");

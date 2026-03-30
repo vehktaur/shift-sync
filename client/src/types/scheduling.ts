@@ -181,6 +181,10 @@ export type CoverageActionResponse = {
   request: CoverageRequestResponse;
 };
 
+export type ShiftDeletionResponse = {
+  success: true;
+};
+
 export type CoverageRequestMutationPayload = {
   shiftId: string;
   counterpartUserId?: string;

@@ -10,6 +10,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useFairnessReport } from "@/hooks/use-operations";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 
@@ -19,6 +24,12 @@ const statusVariant = {
   under: "warning",
   balanced: "success",
   over: "critical",
+} as const;
+
+const statusDescription = {
+  under: "Assigned hours are more than 2 hours below this person's target for the selected period.",
+  balanced: "Assigned hours are within 2 hours of this person's target for the selected period.",
+  over: "Assigned hours are more than 2 hours above this person's target for the selected period.",
 } as const;
 
 export function TeamFeatureView() {
@@ -83,9 +94,16 @@ export function TeamFeatureView() {
                   <div className="space-y-2">
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="text-xl font-semibold">{member.staff.name}</h3>
-                      <Badge variant={statusVariant[member.status]}>
-                        {member.status}
-                      </Badge>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Badge variant={statusVariant[member.status]}>
+                            {member.status}
+                          </Badge>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" sideOffset={8}>
+                          {statusDescription[member.status]}
+                        </TooltipContent>
+                      </Tooltip>
                     </div>
                     <p className="text-sm text-muted-foreground">
                       {member.staff.email}

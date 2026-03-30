@@ -503,6 +503,58 @@ export class SchedulingService {
     return this.buildShiftResponse(shift);
   }
 
+  async deleteShift(
+    viewer: SessionUser,
+    shiftId: string,
+  ): Promise<{ success: true }> {
+    const schedulingViewer = this.getSchedulingViewer(viewer);
+    this.ensureManagerOrAdmin(schedulingViewer.record);
+    const shift = this.getAccessibleShift(shiftId, schedulingViewer.record);
+    this.ensureShiftEditable(shift);
+
+    const location = this.getLocationById(shift.locationId);
+    const impactedUserIds = [...shift.assigneeIds];
+    const hadCoverageRequests = this.runtimeData
+      .getCoverageRequests()
+      .some((request) => request.shiftId === shift.id);
+
+    await this.notifyShiftMutation({
+      shift,
+      type: 'shift_changed',
+      title: 'Shift deleted',
+      body: `${shift.title} at ${location.name} was deleted.`,
+    });
+
+    const shifts = this.runtimeData.getShifts();
+    const shiftIndex = shifts.findIndex(
+      (candidate) => candidate.id === shift.id,
+    );
+
+    if (shiftIndex !== -1) {
+      shifts.splice(shiftIndex, 1);
+    }
+
+    const coverageRequests = this.runtimeData.getCoverageRequests();
+    const remainingCoverageRequests = coverageRequests.filter(
+      (request) => request.shiftId !== shift.id,
+    );
+    coverageRequests.splice(
+      0,
+      coverageRequests.length,
+      ...remainingCoverageRequests,
+    );
+
+    await this.persistSchedulingChange({
+      locationIds: [location.id],
+      shiftId: shift.id,
+      notifyCoverage: hadCoverageRequests,
+      notifyDashboard: true,
+      userIds: impactedUserIds.length > 0 ? impactedUserIds : undefined,
+    });
+
+    return { success: true };
+  }
+
   async assignStaff(
     viewer: SessionUser,
     shiftId: string,

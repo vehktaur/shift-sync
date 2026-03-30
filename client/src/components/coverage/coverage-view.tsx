@@ -92,12 +92,36 @@ export function CoverageView() {
   } = useSchedulingBoard(weekStartDate, {
     enabled: isStaff,
   });
-  const approveCoverageRequestMutation = useApproveCoverageRequest();
-  const cancelCoverageRequestMutation = useCancelCoverageRequest();
-  const acceptCoverageRequestMutation = useAcceptCoverageRequest();
-  const rejectCoverageRequestMutation = useRejectCoverageRequest();
-  const claimCoverageRequestMutation = useClaimCoverageRequest();
-  const withdrawCoverageRequestMutation = useWithdrawCoverageRequest();
+  const {
+    mutateAsync: approveCoverageRequest,
+    isPending: approvingCoverageRequest,
+    variables: approvingCoverageRequestId,
+  } = useApproveCoverageRequest();
+  const {
+    mutateAsync: cancelCoverageRequest,
+    isPending: cancellingCoverageRequest,
+    variables: cancellingCoverageRequestId,
+  } = useCancelCoverageRequest();
+  const {
+    mutateAsync: acceptCoverageRequest,
+    isPending: acceptingCoverageRequest,
+    variables: acceptingCoverageRequestId,
+  } = useAcceptCoverageRequest();
+  const {
+    mutateAsync: rejectCoverageRequest,
+    isPending: rejectingCoverageRequest,
+    variables: rejectingCoverageRequestId,
+  } = useRejectCoverageRequest();
+  const {
+    mutateAsync: claimCoverageRequest,
+    isPending: claimingCoverageRequest,
+    variables: claimingCoverageRequestId,
+  } = useClaimCoverageRequest();
+  const {
+    mutateAsync: withdrawCoverageRequest,
+    isPending: withdrawingCoverageRequest,
+    variables: withdrawingCoverageRequestId,
+  } = useWithdrawCoverageRequest();
   const coverageSummary = buildCoverageBoardSummary(coverageBoard?.requests ?? []);
   const isLoading =
     sessionPending ||
@@ -146,27 +170,27 @@ export function CoverageView() {
     try {
       switch (action) {
         case "approve":
-          await approveCoverageRequestMutation.mutateAsync(requestId);
+          await approveCoverageRequest(requestId);
           toast.success("Coverage request approved.");
           return;
         case "cancel":
-          await cancelCoverageRequestMutation.mutateAsync(requestId);
+          await cancelCoverageRequest(requestId);
           toast.success("Coverage request cancelled.");
           return;
         case "accept":
-          await acceptCoverageRequestMutation.mutateAsync(requestId);
+          await acceptCoverageRequest(requestId);
           toast.success("Swap accepted.");
           return;
         case "reject":
-          await rejectCoverageRequestMutation.mutateAsync(requestId);
+          await rejectCoverageRequest(requestId);
           toast.success("Swap declined.");
           return;
         case "claim":
-          await claimCoverageRequestMutation.mutateAsync(requestId);
+          await claimCoverageRequest(requestId);
           toast.success("Drop request claimed.");
           return;
         case "withdraw":
-          await withdrawCoverageRequestMutation.mutateAsync(requestId);
+          await withdrawCoverageRequest(requestId);
           toast.success("Coverage request withdrawn.");
           return;
       }
@@ -181,34 +205,18 @@ export function CoverageView() {
   ) => {
     switch (action) {
       case "approve":
-        return (
-          approveCoverageRequestMutation.isPending &&
-          approveCoverageRequestMutation.variables === requestId
-        );
+        return approvingCoverageRequest && approvingCoverageRequestId === requestId;
       case "cancel":
-        return (
-          cancelCoverageRequestMutation.isPending &&
-          cancelCoverageRequestMutation.variables === requestId
-        );
+        return cancellingCoverageRequest && cancellingCoverageRequestId === requestId;
       case "accept":
-        return (
-          acceptCoverageRequestMutation.isPending &&
-          acceptCoverageRequestMutation.variables === requestId
-        );
+        return acceptingCoverageRequest && acceptingCoverageRequestId === requestId;
       case "reject":
-        return (
-          rejectCoverageRequestMutation.isPending &&
-          rejectCoverageRequestMutation.variables === requestId
-        );
+        return rejectingCoverageRequest && rejectingCoverageRequestId === requestId;
       case "claim":
-        return (
-          claimCoverageRequestMutation.isPending &&
-          claimCoverageRequestMutation.variables === requestId
-        );
+        return claimingCoverageRequest && claimingCoverageRequestId === requestId;
       case "withdraw":
         return (
-          withdrawCoverageRequestMutation.isPending &&
-          withdrawCoverageRequestMutation.variables === requestId
+          withdrawingCoverageRequest && withdrawingCoverageRequestId === requestId
         );
     }
   };

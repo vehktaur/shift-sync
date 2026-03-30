@@ -225,6 +225,10 @@ export type CoverageActionResponse = {
   request: CoverageRequestResponse;
 };
 
+export type ShiftDeletionResponse = {
+  success: true;
+};
+
 export type CoverageRequestMutationBody = {
   shiftId?: string;
   counterpartUserId?: string;
