@@ -38,7 +38,7 @@ const DEMO_PASSWORD_FALLBACK = "Coastal123!";
 export function LoginView() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const demoAccountsQuery = useDemoAccounts();
+  const { data: demoAccountsResponse } = useDemoAccounts();
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: ADMIN_LOGIN_DEFAULTS,
@@ -64,13 +64,13 @@ export function LoginView() {
   const onSubmit: SubmitHandler<LoginFormValues> = (values) => {
     loginMutation.mutate(values);
   };
-  const demoAccounts = demoAccountsQuery.data?.accounts ?? [];
+  const demoAccounts = demoAccountsResponse?.accounts ?? [];
 
   const applyDemoAccount = (account: DemoAccount) => {
     form.reset({
       email: account.email,
       password:
-        demoAccountsQuery.data?.sharedPassword ?? DEMO_PASSWORD_FALLBACK,
+        demoAccountsResponse?.sharedPassword ?? DEMO_PASSWORD_FALLBACK,
     });
   };
 
@@ -166,7 +166,7 @@ export function LoginView() {
                 <Badge variant="outline">
                   Password
                   {" · "}
-                  {demoAccountsQuery.data?.sharedPassword ??
+                  {demoAccountsResponse?.sharedPassword ??
                     DEMO_PASSWORD_FALLBACK}
                 </Badge>
               </div>

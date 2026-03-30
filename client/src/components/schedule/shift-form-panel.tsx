@@ -147,7 +147,7 @@ export function ShiftFormPanel({
     publishShiftMutation.isPending || unpublishShiftMutation.isPending;
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6 p-6" data-tour="shift-form-panel">
       <DialogHeader className="space-y-2">
         <Badge variant="secondary" className="w-fit bg-primary/10 text-primary">
           {mode === "create" ? "Create shift" : "Edit shift"}
@@ -316,6 +316,7 @@ export function ShiftFormPanel({
               type="button"
               variant={shift.published ? "outline" : "secondary"}
               loading={isPublishing}
+              data-tour="shift-publish-button"
               onClick={async () => {
                 try {
                   if (shift.published) {

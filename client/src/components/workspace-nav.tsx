@@ -11,7 +11,7 @@ import {
   UsersRound,
 } from "lucide-react";
 
-import { useCurrentUser } from "@/hooks/use-auth";
+import { useSession } from "@/hooks/use-auth";
 import { useNotificationCenter } from "@/hooks/use-notifications";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -27,7 +27,7 @@ import {
 export function WorkspaceNav() {
   const pathname = usePathname();
   const { isMobile, setOpenMobile } = useSidebar();
-  const { data: session } = useCurrentUser();
+  const { data: session } = useSession();
   const { data: notifications } = useNotificationCenter();
   const unreadCount = notifications?.unreadCount ?? 0;
   const role = session?.user.role ?? null;
@@ -54,7 +54,7 @@ export function WorkspaceNav() {
   ];
 
   return (
-    <SidebarGroup className="p-0">
+    <SidebarGroup className="p-0" data-tour="workspace-nav">
       <SidebarGroupLabel className="px-1 text-xs font-semibold tracking-[0.18em] text-sidebar-foreground/60 uppercase">
         Workspace
       </SidebarGroupLabel>

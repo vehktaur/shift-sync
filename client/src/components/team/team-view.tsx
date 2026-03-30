@@ -24,26 +24,29 @@ const statusVariant = {
 export function TeamFeatureView() {
   const weekStartDate = useScheduleStore((state) => state.weekStartDate);
   const weekEndDate = getWeekEndDate(weekStartDate);
-  const fairnessQuery = useFairnessReport(weekStartDate, weekEndDate);
+  const {
+    data: fairness,
+    isPending: fairnessPending,
+    isError: fairnessError,
+    refetch: refetchFairness,
+  } = useFairnessReport(weekStartDate, weekEndDate);
 
-  if (fairnessQuery.isLoading) {
+  if (fairnessPending) {
     return <TeamSkeleton />;
   }
 
-  if (fairnessQuery.isError || !fairnessQuery.data) {
+  if (fairnessError || !fairness) {
     return (
       <QueryErrorState
         badgeLabel="Team"
         title="Unable to load team balance"
         description="The fairness report could not be loaded right now."
         onRetry={() => {
-          void fairnessQuery.refetch();
+          void refetchFairness();
         }}
       />
     );
   }
-
-  const fairness = fairnessQuery.data;
 
   return (
     <div className="space-y-5">
@@ -60,7 +63,10 @@ export function TeamFeatureView() {
       </Card>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,0.75fr)]">
-        <Card className="border-white/70 bg-white/85">
+        <Card
+          className="border-white/70 bg-white/85"
+          data-tour="team-distribution"
+        >
           <CardHeader>
             <Badge variant="warning" className="w-fit">
               Distribution

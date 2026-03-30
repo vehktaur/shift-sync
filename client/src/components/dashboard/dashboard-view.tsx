@@ -27,26 +27,30 @@ const statusBadgeVariant = {
 
 export function DashboardFeatureView() {
   const weekStartDate = useScheduleStore((state) => state.weekStartDate);
-  const dashboardQuery = useOperationsDashboard(weekStartDate);
+  const {
+    data: dashboard,
+    isPending: dashboardPending,
+    isError: dashboardError,
+    refetch: refetchDashboard,
+  } = useOperationsDashboard(weekStartDate);
 
-  if (dashboardQuery.isLoading) {
+  if (dashboardPending) {
     return <DashboardSkeleton />;
   }
 
-  if (dashboardQuery.isError || !dashboardQuery.data) {
+  if (dashboardError || !dashboard) {
     return (
       <QueryErrorState
         badgeLabel="Overview"
         title="Unable to load operations"
         description="The overview data could not be loaded right now."
         onRetry={() => {
-          void dashboardQuery.refetch();
+          void refetchDashboard();
         }}
       />
     );
   }
 
-  const dashboard = dashboardQuery.data;
   const weekOfLabel = format(
     new Date(`${dashboard.weekStartDate}T00:00:00`),
     "MMM d, yyyy",
@@ -58,7 +62,7 @@ export function DashboardFeatureView() {
 
   return (
     <div className="space-y-5">
-      <Card className="border-white/70 bg-white/85">
+      <Card className="border-white/70 bg-white/85" data-tour="dashboard-overview">
         <CardHeader>
           <Badge variant="outline" className="w-fit">
             Overview

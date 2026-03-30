@@ -8,11 +8,13 @@ import {
   getDemoAccounts,
 } from "@/lib/api/auth";
 
-export const useCurrentUser = () =>
+export const useSession = () =>
   useQuery({
     queryKey: authQueryKeys.currentUser,
     queryFn: getCurrentUser,
   });
+
+export const useCurrentUser = useSession;
 
 export const useDemoAccounts = () =>
   useQuery({

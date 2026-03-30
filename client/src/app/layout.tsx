@@ -1,21 +1,50 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { cookies } from "next/headers";
 import { Outfit } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 import AppProviders from "../components/app-providers";
+import {
+  siteDescription,
+  siteName,
+  siteUrl,
+} from "@/lib/seo";
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state";
 
 const outfit = Outfit({ subsets: ["latin"], variable: "--font-sans" });
 
 export const metadata: Metadata = {
+  metadataBase: siteUrl,
+  applicationName: siteName,
   title: {
     default: "ShiftSync",
     template: "%s | ShiftSync",
   },
-  description:
-    "Manager-first scheduling workspace for Coastal Eats with coverage, fairness, overtime, and timezone-aware shift planning.",
+  description: siteDescription,
+  alternates: {
+    canonical: "/login",
+  },
+  icons: {
+    icon: "/favicon.ico",
+  },
+  openGraph: {
+    type: "website",
+    locale: "en_US",
+    siteName,
+    title: siteName,
+    description: siteDescription,
+    url: "/login",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: siteName,
+    description: siteDescription,
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#428995",
 };
 
 export default async function RootLayout({

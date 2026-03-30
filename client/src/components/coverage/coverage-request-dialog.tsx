@@ -58,11 +58,15 @@ export function CoverageRequestDialog({
 }: CoverageRequestDialogProps) {
   const [counterpartUserId, setCounterpartUserId] = useState("");
   const [note, setNote] = useState("");
-  const optionsQuery = useCoverageRequestOptions(open ? shift?.id ?? null : null);
+  const {
+    data: options,
+    error: optionsError,
+    isPending: optionsPending,
+    isError: optionsHasError,
+  } = useCoverageRequestOptions(open ? shift?.id ?? null : null);
   const createSwapRequestMutation = useCreateSwapRequest();
   const createDropRequestMutation = useCreateDropRequest();
-  const options = optionsQuery.data ?? null;
-  const isLoadingOptions = optionsQuery.isLoading && Boolean(shift?.id);
+  const isLoadingOptions = optionsPending && Boolean(shift?.id);
   const isSubmitting =
     createSwapRequestMutation.isPending || createDropRequestMutation.isPending;
   const selectedCounterpartUserId =
@@ -127,10 +131,10 @@ export function CoverageRequestDialog({
                 <Skeleton className="h-10 w-full" />
                 <Skeleton className="h-24 w-full" />
               </div>
-            ) : optionsQuery.isError ? (
+            ) : optionsHasError ? (
               <div className="border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
                 {getApiErrorMessage(
-                  optionsQuery.error,
+                  optionsError,
                   "Unable to load coverage options for this shift.",
                 )}
               </div>
@@ -201,7 +205,7 @@ export function CoverageRequestDialog({
             disabled={
               !mode ||
               !shift ||
-              optionsQuery.isError ||
+              optionsHasError ||
               isLoadingOptions ||
               (mode === "swap" && !options?.eligibleSwapTargets.length)
             }

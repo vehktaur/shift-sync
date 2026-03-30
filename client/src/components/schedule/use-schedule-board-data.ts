@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 
-import { useCurrentUser } from "@/hooks/use-auth";
+import { useSession } from "@/hooks/use-auth";
 import { useSchedulingBoard } from "@/hooks/use-scheduling";
 import { useScheduleStore } from "@/stores/schedule-store";
 
@@ -13,16 +13,20 @@ import {
 } from "./schedule.utils";
 
 export const useScheduleBoardData = () => {
-  const currentUserQuery = useCurrentUser();
+  const { data: session } = useSession();
   const locationFilter = useScheduleStore((state) => state.locationFilter);
   const shiftFilter = useScheduleStore((state) => state.shiftFilter);
   const weekStartDate = useScheduleStore((state) => state.weekStartDate);
-  const schedulingBoardQuery = useSchedulingBoard(weekStartDate);
-  const scheduleBoard = schedulingBoardQuery.data ?? null;
+  const {
+    data: scheduleBoard,
+    isPending: scheduleBoardPending,
+    isError: scheduleBoardError,
+    refetch: refetchScheduleBoard,
+  } = useSchedulingBoard(weekStartDate);
 
   const canManageBoard =
-    currentUserQuery.data?.user.role === "admin" ||
-    currentUserQuery.data?.user.role === "manager";
+    session?.user.role === "admin" ||
+    session?.user.role === "manager";
 
   const filteredShifts = useMemo(() => {
     if (!scheduleBoard) {
@@ -70,10 +74,10 @@ export const useScheduleBoardData = () => {
     publishBlockers,
     canManageBoard,
     weekStartDate,
-    isLoading: schedulingBoardQuery.isLoading,
-    isError: schedulingBoardQuery.isError || !scheduleBoard,
+    isLoading: scheduleBoardPending,
+    isError: scheduleBoardError || !scheduleBoard,
     retry: () => {
-      void schedulingBoardQuery.refetch();
+      void refetchScheduleBoard();
     },
   };
 };
@@ -81,7 +85,7 @@ export const useScheduleBoardData = () => {
 export const useActiveScheduleShift = () => {
   const weekStartDate = useScheduleStore((state) => state.weekStartDate);
   const openShiftId = useScheduleStore((state) => state.openShiftId);
-  const scheduleBoard = useSchedulingBoard(weekStartDate).data ?? null;
+  const { data: scheduleBoard } = useSchedulingBoard(weekStartDate);
 
   return useMemo(
     () =>

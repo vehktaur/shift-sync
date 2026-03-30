@@ -8,7 +8,7 @@ import { LogOut, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
 import { authQueryKeys, logout } from "@/lib/api/auth";
-import { useCurrentUser } from "@/hooks/use-auth";
+import { useSession } from "@/hooks/use-auth";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { WorkspaceNav } from "@/components/workspace-nav";
 import { Badge } from "@/components/ui/badge";
@@ -45,7 +45,7 @@ const AppSidebar = () => {
   const router = useRouter();
   const queryClient = useQueryClient();
   const compact = !open && !isMobile;
-  const currentUserQuery = useCurrentUser();
+  const { data: session, error: sessionError } = useSession();
 
   const logoutMutation = useMutation({
     mutationFn: logout,
@@ -62,16 +62,16 @@ const AppSidebar = () => {
 
   useEffect(() => {
     if (
-      currentUserQuery.error &&
-      axios.isAxiosError(currentUserQuery.error) &&
-      currentUserQuery.error.response?.status === 401
+      sessionError &&
+      axios.isAxiosError(sessionError) &&
+      sessionError.response?.status === 401
     ) {
       router.replace("/login");
       router.refresh();
     }
-  }, [currentUserQuery.error, router]);
+  }, [router, sessionError]);
 
-  const currentUser = currentUserQuery.data?.user;
+  const currentUser = session?.user;
   const initials = currentUser ? getInitials(currentUser.name) : "SS";
   const headerAction = isMobile ? (
     <SidebarTrigger

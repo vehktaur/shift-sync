@@ -17,7 +17,7 @@ import { formatWeekRangeLabel } from "@/components/schedule/schedule.utils";
 import { MetricCard } from "@/components/shared/metric-card";
 import { QueryErrorState } from "@/components/shared/query-error-state";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useCurrentUser } from "@/hooks/use-auth";
+import { useSession } from "@/hooks/use-auth";
 import {
   useAcceptCoverageRequest,
   useApproveCoverageRequest,
@@ -69,12 +69,27 @@ const getAssignedShiftsForUser = (shifts: ShiftResponse[], userId: string) =>
 export function CoverageView() {
   const [composerState, setComposerState] = useState<CoverageComposerState>(null);
   const weekStartDate = useScheduleStore((state) => state.weekStartDate);
-  const currentUserQuery = useCurrentUser();
-  const coverageBoardQuery = useCoverageBoard();
-  const role = currentUserQuery.data?.user.role ?? null;
+  const {
+    data: session,
+    isPending: sessionPending,
+    isError: sessionError,
+    refetch: refetchSession,
+  } = useSession();
+  const {
+    data: coverageBoard,
+    isPending: coverageBoardPending,
+    isError: coverageBoardError,
+    refetch: refetchCoverageBoard,
+  } = useCoverageBoard();
+  const role = session?.user.role ?? null;
   const isStaff = role === "staff";
   const canManageCoverage = role === "admin" || role === "manager";
-  const scheduleBoardQuery = useSchedulingBoard(weekStartDate, {
+  const {
+    data: scheduleBoard,
+    isPending: scheduleBoardPending,
+    isError: scheduleBoardError,
+    refetch: refetchScheduleBoard,
+  } = useSchedulingBoard(weekStartDate, {
     enabled: isStaff,
   });
   const approveCoverageRequestMutation = useApproveCoverageRequest();
@@ -83,19 +98,17 @@ export function CoverageView() {
   const rejectCoverageRequestMutation = useRejectCoverageRequest();
   const claimCoverageRequestMutation = useClaimCoverageRequest();
   const withdrawCoverageRequestMutation = useWithdrawCoverageRequest();
-  const coverageBoard = coverageBoardQuery.data ?? null;
   const coverageSummary = buildCoverageBoardSummary(coverageBoard?.requests ?? []);
-  const scheduleBoard = scheduleBoardQuery.data ?? null;
   const isLoading =
-    currentUserQuery.isLoading ||
-    coverageBoardQuery.isLoading ||
-    (isStaff && scheduleBoardQuery.isLoading);
+    sessionPending ||
+    coverageBoardPending ||
+    (isStaff && scheduleBoardPending);
 
   if (isLoading) {
     return <CoverageSkeleton />;
   }
 
-  if (currentUserQuery.isError || !currentUserQuery.data || coverageBoardQuery.isError || !coverageBoard) {
+  if (sessionError || !session || coverageBoardError || !coverageBoard) {
     return (
       <QueryErrorState
         badgeLabel="Coverage unavailable"
@@ -103,16 +116,16 @@ export function CoverageView() {
         description="The coverage queue could not be loaded."
         onRetry={() => {
           void Promise.all([
-            currentUserQuery.refetch(),
-            coverageBoardQuery.refetch(),
-            scheduleBoardQuery.refetch(),
+            refetchSession(),
+            refetchCoverageBoard(),
+            refetchScheduleBoard(),
           ]);
         }}
       />
     );
   }
 
-  const currentUser = currentUserQuery.data.user;
+  const currentUser = session.user;
   const myAssignedShifts =
     isStaff && scheduleBoard ? getAssignedShiftsForUser(scheduleBoard.shifts, currentUser.id) : [];
   const weekLabel =
@@ -230,7 +243,7 @@ export function CoverageView() {
 
         {isStaff && (
           <div className="grid gap-5 2xl:grid-cols-[minmax(0,1.45fr)_24rem]">
-            {scheduleBoardQuery.isError || !scheduleBoard ? (
+            {scheduleBoardError || !scheduleBoard ? (
               <Card className="border-white/70 bg-white/85">
                 <CardHeader>
                   <CardTitle>My shifts</CardTitle>

@@ -28,21 +28,31 @@ const preferenceLabels = [
 ] as const;
 
 export function NotificationsFeatureView() {
-  const centerQuery = useNotificationCenter();
-  const preferencesQuery = useNotificationPreferences();
+  const {
+    data: center,
+    isPending: centerPending,
+    isError: centerError,
+    refetch: refetchCenter,
+  } = useNotificationCenter();
+  const {
+    data: preferences,
+    isPending: preferencesPending,
+    isError: preferencesError,
+    refetch: refetchPreferences,
+  } = useNotificationPreferences();
   const markReadMutation = useMarkNotificationRead();
   const markAllReadMutation = useMarkAllNotificationsRead();
   const updatePreferencesMutation = useUpdateNotificationPreferences();
 
-  if (centerQuery.isLoading || preferencesQuery.isLoading) {
+  if (centerPending || preferencesPending) {
     return <NotificationsSkeleton />;
   }
 
   if (
-    centerQuery.isError ||
-    preferencesQuery.isError ||
-    !centerQuery.data ||
-    !preferencesQuery.data
+    centerError ||
+    preferencesError ||
+    !center ||
+    !preferences
   ) {
     return (
       <QueryErrorState
@@ -50,19 +60,19 @@ export function NotificationsFeatureView() {
         title="Unable to load notifications"
         description="Notifications or preferences could not be loaded right now."
         onRetry={() => {
-          void centerQuery.refetch();
-          void preferencesQuery.refetch();
+          void refetchCenter();
+          void refetchPreferences();
         }}
       />
     );
   }
 
-  const center = centerQuery.data;
-  const preferences = preferencesQuery.data;
-
   return (
     <div className="space-y-5">
-      <Card className="border-white/70 bg-white/85">
+      <Card
+        className="border-white/70 bg-white/85"
+        data-tour="notifications-center"
+      >
         <CardHeader className="sm:flex-row sm:items-start sm:justify-between">
           <div>
             <Badge variant="outline" className="w-fit">

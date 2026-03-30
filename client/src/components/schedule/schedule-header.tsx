@@ -25,7 +25,10 @@ export function ScheduleHeader() {
   );
 
   return (
-    <Card className="overflow-hidden border-white/70 bg-white/88">
+    <Card
+      className="overflow-hidden border-white/70 bg-white/88"
+      data-tour="schedule-header"
+    >
       <CardHeader className="gap-5 bg-[linear-gradient(145deg,rgba(66,137,149,0.16),rgba(255,255,255,0.72)_52%,rgba(224,132,82,0.12))]">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="secondary" className="bg-primary/10 text-primary">
@@ -66,7 +69,7 @@ export function ScheduleHeader() {
               <Link href="/coverage">Coverage queue</Link>
             </Button>
             {canManageBoard && (
-              <Button onClick={openCreateDialog}>
+              <Button onClick={openCreateDialog} data-tour="create-shift-button">
                 <Plus className="size-4" />
                 Create shift
               </Button>

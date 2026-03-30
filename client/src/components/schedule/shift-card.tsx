@@ -46,7 +46,7 @@ export function ShiftCard({ shift }: ShiftCardProps) {
     unpublishShiftMutation.variables === shift.id;
 
   return (
-    <Card className="border-white/70 bg-white/85">
+    <Card className="border-white/70 bg-white/85" data-tour="shift-card">
       <CardHeader className="gap-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-2">

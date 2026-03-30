@@ -27,18 +27,18 @@ export function ScheduleToolbar() {
   const setLocationFilter = useScheduleStore((state) => state.setLocationFilter);
   const setShiftFilter = useScheduleStore((state) => state.setShiftFilter);
   const shiftFilter = useScheduleStore((state) => state.shiftFilter);
-  const locationsQuery = useLocations();
+  const { data: locationsData } = useLocations();
   const publishWeekMutation = usePublishWeek(weekStartDate);
   const unpublishWeekMutation = useUnpublishWeek(weekStartDate);
   const { canManageBoard, scheduleBoard } = useScheduleBoardData();
-  const locations = locationsQuery.data ?? [];
+  const locations = locationsData ?? [];
 
   if (!scheduleBoard) {
     return null;
   }
 
   return (
-    <Card className="border-white/70 bg-white/85">
+    <Card className="border-white/70 bg-white/85" data-tour="schedule-toolbar">
       <CardContent className="flex flex-col gap-4 p-5 xl:flex-row xl:items-end xl:justify-between">
         <div className="grid gap-4 md:grid-cols-2 xl:w-full xl:max-w-3xl">
           <div className="space-y-2">

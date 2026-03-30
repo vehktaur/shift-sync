@@ -26,7 +26,7 @@ export function CoverageRequestQueue({
   onAction,
 }: CoverageRequestQueueProps) {
   return (
-    <Card className="border-white/70 bg-white/85">
+    <Card className="border-white/70 bg-white/85" data-tour="coverage-queue">
       <CardHeader>
         <CardTitle>{title}</CardTitle>
         <p className="text-sm text-muted-foreground">{description}</p>

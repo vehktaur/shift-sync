@@ -24,9 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-} from "@/components/ui/tooltip";
-import { useCurrentUser } from "@/hooks/use-auth";
+import { useSession } from "@/hooks/use-auth";
 import { useAuditExport, useShiftAuditHistory } from "@/hooks/use-audit";
 import { useLocations, useSchedulingBoard } from "@/hooks/use-scheduling";
 import type { AuditExportEntryResponse, ShiftAuditRecord } from "@/types/audit";
@@ -187,11 +185,25 @@ export function ActivityFeatureView() {
     getWeekEndDate(weekStartDate),
   );
   const [exportLocationId, setExportLocationId] = useState("all");
-  const currentUserQuery = useCurrentUser();
-  const scheduleBoardQuery = useSchedulingBoard(weekStartDate);
-  const locationsQuery = useLocations();
-  const currentUser = currentUserQuery.data?.user ?? null;
-  const scheduleBoard = scheduleBoardQuery.data ?? null;
+  const {
+    data: session,
+    isPending: sessionPending,
+    refetch: refetchSession,
+    isError: sessionError,
+  } = useSession();
+  const {
+    data: scheduleBoard,
+    isPending: scheduleBoardPending,
+    isError: scheduleBoardError,
+    refetch: refetchScheduleBoard,
+  } = useSchedulingBoard(weekStartDate);
+  const {
+    data: locations,
+    isPending: locationsPending,
+    isError: locationsError,
+    refetch: refetchLocations,
+  } = useLocations();
+  const currentUser = session?.user ?? null;
   const visibleShifts = scheduleBoard?.shifts ?? [];
   const activeShiftId = visibleShifts.some(
     (shift) => shift.id === selectedShiftId,
@@ -200,23 +212,34 @@ export function ActivityFeatureView() {
     : (visibleShifts[0]?.id ?? null);
   const activeShift =
     visibleShifts.find((shift) => shift.id === activeShiftId) ?? null;
-  const shiftHistoryQuery = useShiftAuditHistory(activeShiftId);
+  const {
+    data: shiftHistory,
+    isPending: shiftHistoryPending,
+    isError: shiftHistoryError,
+  } = useShiftAuditHistory(activeShiftId);
   const isAdmin = currentUser?.role === "admin";
-  const auditExportQuery = useAuditExport({
+  const {
+    data: auditExport,
+    isPending: auditExportPending,
+    isError: auditExportError,
+  } = useAuditExport({
     startDate: exportStartDate,
     endDate: exportEndDate,
     locationId: exportLocationId === "all" ? undefined : exportLocationId,
     enabled: isAdmin && Boolean(exportStartDate && exportEndDate),
   });
-
-  const exportLocations = locationsQuery.data ?? [];
+  const exportLocations = locations ?? [];
 
   const headerDescription = useMemo(
     () => formatWeekRangeLabel(weekStartDate, getWeekEndDate(weekStartDate)),
     [weekStartDate],
   );
 
-  if (currentUserQuery.isLoading || scheduleBoardQuery.isLoading || locationsQuery.isLoading) {
+  if (
+    sessionPending ||
+    scheduleBoardPending ||
+    locationsPending
+  ) {
     return (
       <div className="space-y-5">
         <Card className="border-white/70 bg-white/85">
@@ -232,9 +255,9 @@ export function ActivityFeatureView() {
   }
 
   if (
-    currentUserQuery.isError ||
-    scheduleBoardQuery.isError ||
-    locationsQuery.isError ||
+    sessionError ||
+    scheduleBoardError ||
+    locationsError ||
     !currentUser ||
     !scheduleBoard
   ) {
@@ -245,9 +268,9 @@ export function ActivityFeatureView() {
         description="The activity log could not be loaded right now."
         onRetry={() => {
           void Promise.all([
-            currentUserQuery.refetch(),
-            scheduleBoardQuery.refetch(),
-            locationsQuery.refetch(),
+            refetchSession(),
+            refetchScheduleBoard(),
+            refetchLocations(),
           ]);
         }}
       />
@@ -350,18 +373,18 @@ export function ActivityFeatureView() {
             )}
           </div>
 
-          {shiftHistoryQuery.isError ? (
+          {shiftHistoryError ? (
             <div className="border border-dashed border-border/70 bg-background/60 p-5 text-sm text-muted-foreground">
               Unable to load shift history for the selected shift.
             </div>
-          ) : shiftHistoryQuery.isLoading ? (
+          ) : shiftHistoryPending ? (
             <div className="border border-dashed border-border/70 bg-background/60 p-5 text-sm text-muted-foreground">
               Loading shift history...
             </div>
           ) : (
             <ActivityDataTable
               columns={shiftHistoryColumns}
-              data={shiftHistoryQuery.data?.entries ?? []}
+              data={shiftHistory?.entries ?? []}
               emptyMessage="No audit entries yet for this shift."
             />
           )}
@@ -456,29 +479,29 @@ export function ActivityFeatureView() {
               <Button
                 className="self-end"
                 onClick={() => {
-                  if (auditExportQuery.data) {
-                    downloadAuditExport(auditExportQuery.data.entries);
+                  if (auditExport) {
+                    downloadAuditExport(auditExport.entries);
                   }
                 }}
-                disabled={!auditExportQuery.data?.entries.length}
+                disabled={!auditExport?.entries.length}
               >
                 <Download className="size-4" />
                 Download audit export
               </Button>
             </div>
 
-            {auditExportQuery.isError ? (
+            {auditExportError ? (
               <div className="border border-dashed border-border/70 bg-background/60 p-5 text-sm text-muted-foreground">
                 Unable to load export entries for the selected filters.
               </div>
-            ) : auditExportQuery.isLoading ? (
+            ) : auditExportPending ? (
               <div className="border border-dashed border-border/70 bg-background/60 p-5 text-sm text-muted-foreground">
                 Loading export entries...
               </div>
             ) : (
               <ActivityDataTable
                 columns={exportColumns}
-                data={auditExportQuery.data?.entries ?? []}
+                data={auditExport?.entries ?? []}
                 emptyMessage="No audit entries matched the selected filters."
               />
             )}

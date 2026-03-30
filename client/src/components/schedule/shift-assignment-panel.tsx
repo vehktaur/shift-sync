@@ -59,7 +59,11 @@ export function ShiftAssignmentPanel() {
     useState<EligibleStaffResponse["staff"] | null>(null);
   const [overrideReason, setOverrideReason] = useState("");
   const shift = useActiveScheduleShift();
-  const eligibleStaffQuery = useShiftEligibleStaff(shift?.id ?? null);
+  const {
+    data: eligibleStaff,
+    isPending: eligibleStaffPending,
+    isError: eligibleStaffError,
+  } = useShiftEligibleStaff(shift?.id ?? null);
   const assignStaffMutation = useAssignStaff(shift?.id ?? null);
   const removeAssigneeMutation = useRemoveShiftAssignee(shift?.id ?? null);
 
@@ -87,7 +91,7 @@ export function ShiftAssignmentPanel() {
 
   return (
     <>
-      <div className="space-y-5 p-6">
+      <div className="space-y-5 p-6" data-tour="shift-assignment-panel">
         <div className="space-y-2">
           <Badge variant="outline" className="w-fit">
             Assignments
@@ -166,15 +170,15 @@ export function ShiftAssignmentPanel() {
               </div>
             </div>
 
-            {eligibleStaffQuery.isLoading ? (
+            {eligibleStaffPending ? (
               <AssignmentPanelSkeleton />
-            ) : eligibleStaffQuery.isError ? (
+            ) : eligibleStaffError ? (
               <div className="border border-dashed border-border/70 bg-background/60 p-5 text-sm leading-6 text-muted-foreground">
                 Unable to load available staff right now.
               </div>
-            ) : eligibleStaffQuery.data && eligibleStaffQuery.data.length > 0 ? (
+            ) : eligibleStaff && eligibleStaff.length > 0 ? (
               <div className="space-y-3 overflow-y-auto max-h-60 pe-2 -me-5">
-                {eligibleStaffQuery.data.map((option) => {
+                {eligibleStaff.map((option) => {
                   const projectedHours = formatProjectedHours(
                     option.projectedWeeklyHours,
                   );

@@ -10,8 +10,8 @@ import {
 } from "@/components/ui/tooltip";
 
 export function ScheduleLocationGrid() {
-  const locationsQuery = useLocations();
-  const locations = locationsQuery.data ?? [];
+  const { data: locationsData } = useLocations();
+  const locations = locationsData ?? [];
 
   if (locations.length === 0) {
     return null;

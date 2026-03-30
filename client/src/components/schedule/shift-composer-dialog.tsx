@@ -36,8 +36,11 @@ export function ShiftComposerDialog() {
   const selectedWeekStartDate = useScheduleStore((state) => state.weekStartDate);
   const activeShift = useActiveScheduleShift();
   const { scheduleBoard } = useScheduleBoardData();
-  const locationsQuery = useLocations();
-  const shiftReferenceDataQuery = useShiftReferenceData();
+  const { data: locationsData, isPending: locationsPending } = useLocations();
+  const {
+    data: shiftReferenceData,
+    isPending: shiftReferenceDataPending,
+  } = useShiftReferenceData();
   const createShiftMutation = useCreateShift();
   const updateShiftMutation = useUpdateShift(selectedWeekStartDate);
   const isComposerOpen = dialogMode !== null;
@@ -51,8 +54,8 @@ export function ShiftComposerDialog() {
     }),
   });
 
-  const locations = locationsQuery.data ?? [];
-  const skills = shiftReferenceDataQuery.data?.skills ?? [];
+  const locations = locationsData ?? [];
+  const skills = shiftReferenceData?.skills ?? [];
   const boardWeekStartDate = selectedWeekStartDate;
   const mode = dialogMode ?? "create";
   const defaultLocationId = locations[0]?.id ?? "";
@@ -96,7 +99,7 @@ export function ShiftComposerDialog() {
     boardWeekStartDate,
   ]);
 
-  if (!scheduleBoard || locationsQuery.isLoading || shiftReferenceDataQuery.isLoading) {
+  if (!scheduleBoard || locationsPending || shiftReferenceDataPending) {
     return null;
   }
 
@@ -109,7 +112,10 @@ export function ShiftComposerDialog() {
         }
       }}
     >
-      <DialogContent className="max-h-[92dvh] gap-0 p-0 sm:max-w-5xl">
+      <DialogContent
+        className="max-h-[92dvh] gap-0 p-0 sm:max-w-5xl"
+        data-tour="shift-composer"
+      >
         <div className="grid max-h-[92dvh] overflow-hidden lg:grid-cols-[minmax(0,1.1fr)_22rem]">
           <div className="overflow-y-auto border-b border-border/60 lg:border-r lg:border-b-0">
             <ShiftFormPanel
