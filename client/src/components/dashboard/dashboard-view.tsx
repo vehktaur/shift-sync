@@ -1,5 +1,6 @@
 "use client";
 
+import { format } from "date-fns";
 import { ShieldAlert, UsersRound } from "lucide-react";
 
 import { useOperationsDashboard } from "@/hooks/use-operations";
@@ -14,6 +15,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { formatWeekRangeLabel } from "@/components/schedule/schedule.utils";
 
 import { DashboardSkeleton } from "./dashboard-skeleton";
 
@@ -45,6 +47,14 @@ export function DashboardFeatureView() {
   }
 
   const dashboard = dashboardQuery.data;
+  const weekOfLabel = format(
+    new Date(`${dashboard.weekStartDate}T00:00:00`),
+    "MMM d, yyyy",
+  );
+  const weekRangeLabel = formatWeekRangeLabel(
+    dashboard.weekStartDate,
+    dashboard.weekEndDate,
+  );
 
   return (
     <div className="space-y-5">
@@ -53,10 +63,8 @@ export function DashboardFeatureView() {
           <Badge variant="outline" className="w-fit">
             Overview
           </Badge>
-          <CardTitle>Week of {dashboard.weekStartDate}</CardTitle>
-          <CardDescription>
-            {dashboard.weekStartDate} to {dashboard.weekEndDate}
-          </CardDescription>
+          <CardTitle>Week of {weekOfLabel}</CardTitle>
+          <CardDescription>{weekRangeLabel}</CardDescription>
         </CardHeader>
       </Card>
 

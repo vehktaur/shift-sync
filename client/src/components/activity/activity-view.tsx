@@ -25,9 +25,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useCurrentUser } from "@/hooks/use-auth";
 import { useAuditExport, useShiftAuditHistory } from "@/hooks/use-audit";
@@ -110,14 +107,9 @@ const shiftHistoryColumns: ColumnDef<ShiftAuditRecord>[] = [
     accessorKey: "action",
     header: "Action",
     cell: ({ row }) => (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Badge variant="outline" className="whitespace-nowrap">
-            {getAuditActionLabel(row.original.action)}
-          </Badge>
-        </TooltipTrigger>
-        <TooltipContent>{row.original.action}</TooltipContent>
-      </Tooltip>
+      <Badge variant="outline" className="whitespace-nowrap">
+        {getAuditActionLabel(row.original.action)}
+      </Badge>
     ),
   },
   {
@@ -172,14 +164,9 @@ const exportColumns: ColumnDef<AuditExportEntryResponse>[] = [
     accessorKey: "action",
     header: "Action",
     cell: ({ row }) => (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Badge variant="outline" className="whitespace-nowrap">
-            {getAuditActionLabel(row.original.action)}
-          </Badge>
-        </TooltipTrigger>
-        <TooltipContent>{row.original.action}</TooltipContent>
-      </Tooltip>
+      <Badge variant="outline" className="whitespace-nowrap">
+        {getAuditActionLabel(row.original.action)}
+      </Badge>
     ),
   },
   {
