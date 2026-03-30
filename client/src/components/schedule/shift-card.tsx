@@ -50,6 +50,8 @@ type ShiftCardProps = {
   shift: ShiftResponse;
 };
 
+// Schedule cards surface the shift status at a glance and expose the main
+// manager actions without forcing the user into the full editor every time.
 export function ShiftCard({ shift }: ShiftCardProps) {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const openEditDialog = useScheduleUiStore((state) => state.openEditDialog);

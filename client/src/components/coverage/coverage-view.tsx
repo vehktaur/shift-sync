@@ -66,6 +66,8 @@ const buildActiveRequestSummaryByShiftId = (
 const getAssignedShiftsForUser = (shifts: ShiftResponse[], userId: string) =>
   shifts.filter((shift) => shift.assignees.some((assignee) => assignee.id === userId));
 
+// Coverage combines a staff self-service view with the manager queue so both
+// roles stay on the same page while seeing the actions relevant to them.
 export function CoverageView() {
   const [composerState, setComposerState] = useState<CoverageComposerState>(null);
   const weekStartDate = useWorkspaceStore((state) => state.weekStartDate);

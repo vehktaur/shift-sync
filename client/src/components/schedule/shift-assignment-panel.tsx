@@ -31,6 +31,8 @@ import type {
   EligibleStaffResponse,
 } from "@/types/scheduling";
 
+// Assignment management for the currently opened shift, including the
+// consecutive-day override flow when a manager needs to justify an assignment.
 const AssignmentPanelSkeleton = () => (
   <div className="space-y-3">
     {Array.from({ length: 3 }).map((_, index) => (

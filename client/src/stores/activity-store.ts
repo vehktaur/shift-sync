@@ -9,6 +9,8 @@ import {
 
 const currentWeekStartDate = getCurrentWeekStartDate();
 
+// Activity keeps its export controls separate from the shared workspace week so
+// admins can inspect one week while exporting a different date range if needed.
 type ActivityStoreState = {
   selectedShiftId: string;
   exportStartDate: string;

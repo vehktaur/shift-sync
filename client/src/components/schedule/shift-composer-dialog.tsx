@@ -29,6 +29,8 @@ import {
 import { useScheduleUiStore } from "@/stores/schedule-ui-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 
+// The composer owns shift form state and keeps the assignment panel mounted
+// alongside it so managers can save a shift and continue staffing in place.
 export function ShiftComposerDialog() {
   const [closeComposer, dialogMode, keepComposerOpenForShift] =
     useScheduleUiStore(

@@ -6,6 +6,8 @@ import type { ShiftFilter } from "@/components/schedule/schedule.utils";
 
 type DialogMode = "create" | "edit" | null;
 
+// Schedule-only UI state. This keeps board filters and composer visibility
+// out of local component state so the schedule surface behaves consistently.
 type ScheduleUiStoreState = {
   locationFilter: string;
   shiftFilter: ShiftFilter;

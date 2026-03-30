@@ -50,6 +50,8 @@ const getInitials = (name: string) =>
     .slice(0, 2)
     .toUpperCase();
 
+// Global workspace shell sidebar with navigation, account details, and the
+// confirmed logout flow for both compact and expanded layouts.
 const AppSidebar = () => {
   const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
   const { isMobile, open } = useSidebar();

@@ -14,6 +14,8 @@ import {
   groupShiftsByDay,
 } from "./schedule.utils";
 
+// Centralized board selector hook that combines raw schedule data with the
+// current workspace filters so schedule components stay thin.
 export const useScheduleBoardData = () => {
   const { data: session } = useSession();
   const [locationFilter, shiftFilter] = useScheduleUiStore(
@@ -85,6 +87,7 @@ export const useScheduleBoardData = () => {
   };
 };
 
+// The composer and assignment panel both need the currently opened shift.
 export const useActiveScheduleShift = () => {
   const weekStartDate = useWorkspaceStore((state) => state.weekStartDate);
   const openShiftId = useScheduleUiStore((state) => state.openShiftId);

@@ -133,6 +133,8 @@ const placementFallbacks: Record<TourPlacement, TourPlacement[]> = {
   top: ["top", "bottom", "right", "left", "center"],
 };
 
+// Guided workspace tour that is aware of role-based steps, route changes, and
+// live UI state like the sidebar or schedule composer.
 export function WorkspaceTour() {
   const router = useRouter();
   const pathname = usePathname();

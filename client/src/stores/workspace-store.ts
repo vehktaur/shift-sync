@@ -7,6 +7,8 @@ import {
   getCurrentWeekStartDate,
 } from "@/components/schedule/schedule.utils";
 
+// Shared workspace state that should stay in sync across overview, schedule,
+// team, activity, and other week-based screens.
 type WorkspaceStoreState = {
   weekStartDate: string;
   setWeekStartDate: (value: string) => void;

@@ -27,6 +27,8 @@ const preferenceLabels = [
   { key: "availabilityUpdates", label: "Availability changes" },
 ] as const;
 
+// Notification center and preference toggles share one screen so people can
+// both react to alerts and tune the kinds of updates they receive.
 export function NotificationsFeatureView() {
   const {
     data: center,
