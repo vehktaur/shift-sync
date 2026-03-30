@@ -1,15 +1,14 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { format, isValid, parseISO } from "date-fns";
 import { Download, RotateCcw } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
 
 import { ActivityDataTable } from "@/components/activity/activity-data-table";
 import {
   formatWeekRangeLabel,
-  getAdjacentWeekStartDate,
-  getCurrentWeekStartDate,
   getWeekEndDate,
 } from "@/components/schedule/schedule.utils";
 import { QueryErrorState } from "@/components/shared/query-error-state";
@@ -27,6 +26,8 @@ import {
 import { useSession } from "@/hooks/use-auth";
 import { useAuditExport, useShiftAuditHistory } from "@/hooks/use-audit";
 import { useLocations, useSchedulingBoard } from "@/hooks/use-scheduling";
+import { useActivityStore } from "@/stores/activity-store";
+import { useWorkspaceStore } from "@/stores/workspace-store";
 import type { AuditExportEntryResponse, ShiftAuditRecord } from "@/types/audit";
 
 const formatSnapshot = (value?: Record<string, unknown>) =>
@@ -178,13 +179,38 @@ const exportColumns: ColumnDef<AuditExportEntryResponse>[] = [
 ];
 
 export function ActivityFeatureView() {
-  const [weekStartDate, setWeekStartDate] = useState(getCurrentWeekStartDate);
-  const [selectedShiftId, setSelectedShiftId] = useState<string>("");
-  const [exportStartDate, setExportStartDate] = useState(weekStartDate);
-  const [exportEndDate, setExportEndDate] = useState(
-    getWeekEndDate(weekStartDate),
+  const [weekStartDate, goToCurrentWeek, goToNextWeek, goToPreviousWeek] =
+    useWorkspaceStore(
+      useShallow((state) => [
+        state.weekStartDate,
+        state.goToCurrentWeek,
+        state.goToNextWeek,
+        state.goToPreviousWeek,
+      ]),
+    );
+  const [
+    selectedShiftId,
+    exportStartDate,
+    exportEndDate,
+    exportLocationId,
+    setSelectedShiftId,
+    setExportStartDate,
+    setExportEndDate,
+    setExportLocationId,
+    syncExportRangeToWeek,
+  ] = useActivityStore(
+    useShallow((state) => [
+      state.selectedShiftId,
+      state.exportStartDate,
+      state.exportEndDate,
+      state.exportLocationId,
+      state.setSelectedShiftId,
+      state.setExportStartDate,
+      state.setExportEndDate,
+      state.setExportLocationId,
+      state.syncExportRangeToWeek,
+    ]),
   );
-  const [exportLocationId, setExportLocationId] = useState("all");
   const {
     data: session,
     isPending: sessionPending,
@@ -303,30 +329,13 @@ export function ActivityFeatureView() {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-                onClick={() =>
-                  setWeekStartDate((value) =>
-                    getAdjacentWeekStartDate(value, -1),
-                  )
-                }
-              >
+              <Button variant="outline" onClick={goToPreviousWeek}>
                 Previous week
               </Button>
-              <Button
-                variant="outline"
-                onClick={() => setWeekStartDate(getCurrentWeekStartDate())}
-              >
+              <Button variant="outline" onClick={goToCurrentWeek}>
                 Current week
               </Button>
-              <Button
-                variant="outline"
-                onClick={() =>
-                  setWeekStartDate((value) =>
-                    getAdjacentWeekStartDate(value, 1),
-                  )
-                }
-              >
+              <Button variant="outline" onClick={goToNextWeek}>
                 Next week
               </Button>
             </div>
@@ -468,10 +477,7 @@ export function ActivityFeatureView() {
               <Button
                 variant="outline"
                 className="self-end"
-                onClick={() => {
-                  setExportStartDate(weekStartDate);
-                  setExportEndDate(getWeekEndDate(weekStartDate));
-                }}
+                onClick={() => syncExportRangeToWeek(weekStartDate)}
               >
                 <RotateCcw className="size-4" />
                 Use visible week

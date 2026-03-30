@@ -4,7 +4,6 @@ import { format } from "date-fns";
 import { ShieldAlert, UsersRound } from "lucide-react";
 
 import { useOperationsDashboard } from "@/hooks/use-operations";
-import { useScheduleStore } from "@/stores/schedule-store";
 import { MetricCard } from "@/components/shared/metric-card";
 import { QueryErrorState } from "@/components/shared/query-error-state";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +15,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { formatWeekRangeLabel } from "@/components/schedule/schedule.utils";
+import { useWorkspaceStore } from "@/stores/workspace-store";
 
 import { DashboardSkeleton } from "./dashboard-skeleton";
 
@@ -26,7 +26,7 @@ const statusBadgeVariant = {
 } as const;
 
 export function DashboardFeatureView() {
-  const weekStartDate = useScheduleStore((state) => state.weekStartDate);
+  const weekStartDate = useWorkspaceStore((state) => state.weekStartDate);
   const {
     data: dashboard,
     isPending: dashboardPending,

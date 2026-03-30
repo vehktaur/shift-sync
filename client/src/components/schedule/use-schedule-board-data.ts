@@ -1,10 +1,12 @@
 "use client";
 
 import { useMemo } from "react";
+import { useShallow } from "zustand/react/shallow";
 
 import { useSession } from "@/hooks/use-auth";
 import { useSchedulingBoard } from "@/hooks/use-scheduling";
-import { useScheduleStore } from "@/stores/schedule-store";
+import { useScheduleUiStore } from "@/stores/schedule-ui-store";
+import { useWorkspaceStore } from "@/stores/workspace-store";
 
 import {
   buildPublishBlockers,
@@ -14,9 +16,10 @@ import {
 
 export const useScheduleBoardData = () => {
   const { data: session } = useSession();
-  const locationFilter = useScheduleStore((state) => state.locationFilter);
-  const shiftFilter = useScheduleStore((state) => state.shiftFilter);
-  const weekStartDate = useScheduleStore((state) => state.weekStartDate);
+  const [locationFilter, shiftFilter] = useScheduleUiStore(
+    useShallow((state) => [state.locationFilter, state.shiftFilter]),
+  );
+  const weekStartDate = useWorkspaceStore((state) => state.weekStartDate);
   const {
     data: scheduleBoard,
     isPending: scheduleBoardPending,
@@ -83,8 +86,8 @@ export const useScheduleBoardData = () => {
 };
 
 export const useActiveScheduleShift = () => {
-  const weekStartDate = useScheduleStore((state) => state.weekStartDate);
-  const openShiftId = useScheduleStore((state) => state.openShiftId);
+  const weekStartDate = useWorkspaceStore((state) => state.weekStartDate);
+  const openShiftId = useScheduleUiStore((state) => state.openShiftId);
   const { data: scheduleBoard } = useSchedulingBoard(weekStartDate);
 
   return useMemo(

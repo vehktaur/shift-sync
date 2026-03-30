@@ -1,19 +1,47 @@
 import Link from "next/link";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
 
 import { formatWeekRangeLabel } from "@/components/schedule/schedule.utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { useScheduleBoardData } from "@/components/schedule/use-schedule-board-data";
-import { useScheduleStore } from "@/stores/schedule-store";
+import { useScheduleUiStore } from "@/stores/schedule-ui-store";
+import { useWorkspaceStore } from "@/stores/workspace-store";
 
 export function ScheduleHeader() {
-  const goToCurrentWeek = useScheduleStore((state) => state.goToCurrentWeek);
-  const goToNextWeek = useScheduleStore((state) => state.goToNextWeek);
-  const goToPreviousWeek = useScheduleStore((state) => state.goToPreviousWeek);
-  const openCreateDialog = useScheduleStore((state) => state.openCreateDialog);
+  const [goToCurrentWeek, goToNextWeek, goToPreviousWeek] = useWorkspaceStore(
+    useShallow((state) => [
+      state.goToCurrentWeek,
+      state.goToNextWeek,
+      state.goToPreviousWeek,
+    ]),
+  );
+  const [closeComposer, openCreateDialog] = useScheduleUiStore(
+    useShallow((state) => [state.closeComposer, state.openCreateDialog]),
+  );
   const { canManageBoard, scheduleBoard } = useScheduleBoardData();
+
+  const handlePreviousWeek = () => {
+    closeComposer();
+    goToPreviousWeek();
+  };
+
+  const handleCurrentWeek = () => {
+    closeComposer();
+    goToCurrentWeek();
+  };
+
+  const handleNextWeek = () => {
+    closeComposer();
+    goToNextWeek();
+  };
+
+  const handleCreateShift = () => {
+    closeComposer();
+    openCreateDialog();
+  };
 
   if (!scheduleBoard) {
     return null;
@@ -49,18 +77,18 @@ export function ScheduleHeader() {
               variant="outline"
               size="icon"
               aria-label="Previous week"
-              onClick={goToPreviousWeek}
+              onClick={handlePreviousWeek}
             >
               <ChevronLeft className="size-4" />
             </Button>
-            <Button variant="outline" onClick={goToCurrentWeek}>
+            <Button variant="outline" onClick={handleCurrentWeek}>
               Current week
             </Button>
             <Button
               variant="outline"
               size="icon"
               aria-label="Next week"
-              onClick={goToNextWeek}
+              onClick={handleNextWeek}
             >
               <ChevronRight className="size-4" />
             </Button>
@@ -69,7 +97,7 @@ export function ScheduleHeader() {
               <Link href="/coverage">Coverage queue</Link>
             </Button>
             {canManageBoard && (
-              <Button onClick={openCreateDialog} data-tour="create-shift-button">
+              <Button onClick={handleCreateShift} data-tour="create-shift-button">
                 <Plus className="size-4" />
                 Create shift
               </Button>

@@ -4,10 +4,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePathname, useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, Sparkles, X } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
 
 import { useSession } from "@/hooks/use-auth";
 import { useSchedulingBoard } from "@/hooks/use-scheduling";
-import { useScheduleStore } from "@/stores/schedule-store";
+import { useScheduleUiStore } from "@/stores/schedule-ui-store";
+import { useWorkspaceStore } from "@/stores/workspace-store";
 import type { UserRole } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -136,10 +138,14 @@ export function WorkspaceTour() {
   const pathname = usePathname();
   const { isMobile, open, openMobile, setOpen, setOpenMobile } = useSidebar();
   const { data: session, isPending: sessionPending } = useSession();
-  const weekStartDate = useScheduleStore((state) => state.weekStartDate);
-  const openCreateDialog = useScheduleStore((state) => state.openCreateDialog);
-  const openEditDialog = useScheduleStore((state) => state.openEditDialog);
-  const closeComposer = useScheduleStore((state) => state.closeComposer);
+  const weekStartDate = useWorkspaceStore((state) => state.weekStartDate);
+  const [openCreateDialog, openEditDialog, closeComposer] = useScheduleUiStore(
+    useShallow((state) => [
+      state.openCreateDialog,
+      state.openEditDialog,
+      state.closeComposer,
+    ]),
+  );
   const {
     data: scheduleBoard,
     isPending: scheduleBoardPending,

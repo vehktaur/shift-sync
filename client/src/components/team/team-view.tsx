@@ -11,7 +11,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useFairnessReport } from "@/hooks/use-operations";
-import { useScheduleStore } from "@/stores/schedule-store";
+import { useWorkspaceStore } from "@/stores/workspace-store";
 
 import { TeamSkeleton } from "./team-skeleton";
 
@@ -22,7 +22,7 @@ const statusVariant = {
 } as const;
 
 export function TeamFeatureView() {
-  const weekStartDate = useScheduleStore((state) => state.weekStartDate);
+  const weekStartDate = useWorkspaceStore((state) => state.weekStartDate);
   const weekEndDate = getWeekEndDate(weekStartDate);
   const {
     data: fairness,

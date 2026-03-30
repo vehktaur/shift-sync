@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
+import { useShallow } from "zustand/react/shallow";
 
 import { ShiftAssignmentPanel } from "@/components/schedule/shift-assignment-panel";
 import { ShiftFormPanel } from "@/components/schedule/shift-form-panel";
@@ -25,15 +26,19 @@ import {
   type ShiftFormValues,
   shiftFormSchema,
 } from "@/lib/schemas";
-import { useScheduleStore } from "@/stores/schedule-store";
+import { useScheduleUiStore } from "@/stores/schedule-ui-store";
+import { useWorkspaceStore } from "@/stores/workspace-store";
 
 export function ShiftComposerDialog() {
-  const closeComposer = useScheduleStore((state) => state.closeComposer);
-  const dialogMode = useScheduleStore((state) => state.dialogMode);
-  const keepComposerOpenForShift = useScheduleStore(
-    (state) => state.keepComposerOpenForShift,
-  );
-  const selectedWeekStartDate = useScheduleStore((state) => state.weekStartDate);
+  const [closeComposer, dialogMode, keepComposerOpenForShift] =
+    useScheduleUiStore(
+      useShallow((state) => [
+        state.closeComposer,
+        state.dialogMode,
+        state.keepComposerOpenForShift,
+      ]),
+    );
+  const selectedWeekStartDate = useWorkspaceStore((state) => state.weekStartDate);
   const activeShift = useActiveScheduleShift();
   const { scheduleBoard } = useScheduleBoardData();
   const { data: locationsData, isPending: locationsPending } = useLocations();
@@ -50,7 +55,7 @@ export function ShiftComposerDialog() {
     defaultValues: buildDefaultShiftValues({
       defaultLocationId: "",
       defaultSkill: "",
-      weekStartDate: "2026-03-30",
+      weekStartDate: selectedWeekStartDate,
     }),
   });
 

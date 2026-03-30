@@ -1,5 +1,6 @@
 import { PencilLine, Send } from "lucide-react";
 import { toast } from "sonner";
+import { useShallow } from "zustand/react/shallow";
 
 import type { ShiftFilter } from "@/components/schedule/schedule.utils";
 import { shiftFilters } from "@/components/schedule/schedule.utils";
@@ -19,14 +20,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useScheduleStore } from "@/stores/schedule-store";
+import { useScheduleUiStore } from "@/stores/schedule-ui-store";
+import { useWorkspaceStore } from "@/stores/workspace-store";
 
 export function ScheduleToolbar() {
-  const locationFilter = useScheduleStore((state) => state.locationFilter);
-  const weekStartDate = useScheduleStore((state) => state.weekStartDate);
-  const setLocationFilter = useScheduleStore((state) => state.setLocationFilter);
-  const setShiftFilter = useScheduleStore((state) => state.setShiftFilter);
-  const shiftFilter = useScheduleStore((state) => state.shiftFilter);
+  const [locationFilter, setLocationFilter, setShiftFilter, shiftFilter] =
+    useScheduleUiStore(
+      useShallow((state) => [
+        state.locationFilter,
+        state.setLocationFilter,
+        state.setShiftFilter,
+        state.shiftFilter,
+      ]),
+    );
+  const weekStartDate = useWorkspaceStore((state) => state.weekStartDate);
   const { data: locationsData } = useLocations();
   const publishWeekMutation = usePublishWeek(weekStartDate);
   const unpublishWeekMutation = useUnpublishWeek(weekStartDate);

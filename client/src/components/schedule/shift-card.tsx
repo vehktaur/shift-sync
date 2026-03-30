@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/tooltip";
 import { usePublishShift, useUnpublishShift } from "@/hooks/use-scheduling";
 import { getApiErrorMessage } from "@/lib/api/client";
-import { useScheduleStore } from "@/stores/schedule-store";
+import { useScheduleUiStore } from "@/stores/schedule-ui-store";
 import type { ShiftResponse } from "@/types/scheduling";
 
 import {
@@ -34,7 +34,7 @@ type ShiftCardProps = {
 };
 
 export function ShiftCard({ shift }: ShiftCardProps) {
-  const openEditDialog = useScheduleStore((state) => state.openEditDialog);
+  const openEditDialog = useScheduleUiStore((state) => state.openEditDialog);
   const publishShiftMutation = usePublishShift();
   const unpublishShiftMutation = useUnpublishShift();
   const { canManageBoard } = useScheduleBoardData();
@@ -82,6 +82,7 @@ export function ShiftCard({ shift }: ShiftCardProps) {
               <Button
                 size="sm"
                 variant={shift.published ? "outline" : "default"}
+                data-tour={!shift.published ? "shift-publish-button" : undefined}
                 onClick={async () => {
                   try {
                     if (shift.published) {

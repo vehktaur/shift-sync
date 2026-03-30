@@ -29,7 +29,7 @@ import {
   useWithdrawCoverageRequest,
 } from "@/hooks/use-scheduling";
 import { getApiErrorMessage } from "@/lib/api/client";
-import { useScheduleStore } from "@/stores/schedule-store";
+import { useWorkspaceStore } from "@/stores/workspace-store";
 import type {
   CoverageRequestAction,
   CoverageRequestResponse,
@@ -68,7 +68,7 @@ const getAssignedShiftsForUser = (shifts: ShiftResponse[], userId: string) =>
 
 export function CoverageView() {
   const [composerState, setComposerState] = useState<CoverageComposerState>(null);
-  const weekStartDate = useScheduleStore((state) => state.weekStartDate);
+  const weekStartDate = useWorkspaceStore((state) => state.weekStartDate);
   const {
     data: session,
     isPending: sessionPending,
