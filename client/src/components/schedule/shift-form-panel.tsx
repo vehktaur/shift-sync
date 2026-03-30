@@ -256,12 +256,13 @@ export function ShiftFormPanel({
                   <SelectTrigger
                     id="requiredSkill"
                     aria-invalid={fieldState.invalid}
+                    className="capitalize"
                   >
                     <SelectValue placeholder="Choose a skill" />
                   </SelectTrigger>
                   <SelectContent>
                     {skills.map((skill) => (
-                      <SelectItem key={skill} value={skill}>
+                      <SelectItem key={skill} value={skill} className="capitalize">
                         {skill}
                       </SelectItem>
                     ))}

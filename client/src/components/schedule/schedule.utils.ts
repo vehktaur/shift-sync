@@ -210,7 +210,7 @@ export const getShiftEditLockReason = (
 ) => shiftLockedActionReasons[action];
 
 export const getProjectedHoursExplanation = () =>
-  "This is the person's estimated total scheduled hours for the selected week if you assign them to this shift.";
+  "Estimated total scheduled hours for the selected week if assigned to this shift.";
 
 export type ScheduleDayGroup = {
   dayKey: string;

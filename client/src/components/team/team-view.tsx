@@ -147,7 +147,7 @@ export function TeamFeatureView() {
 
                 <div className="mt-4 flex flex-wrap gap-2">
                   {member.staff.skills.map((skill) => (
-                    <Badge key={skill} variant="outline">
+                    <Badge key={skill} variant="outline" className="capitalize">
                       {skill}
                     </Badge>
                   ))}

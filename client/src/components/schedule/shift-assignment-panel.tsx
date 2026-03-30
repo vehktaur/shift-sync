@@ -121,21 +121,17 @@ export function ShiftAssignmentPanel() {
             {shift ? "Eligible staff for this shift" : "Save the shift first"}
           </h3>
           <p className="text-sm leading-6 text-muted-foreground">
-            Staff who match this shift. The hours badge shows what each
-            person&apos;s total for the selected week would be after taking this
-            shift.
+            Staff who match this shift.
           </p>
           {shift && !shift.canEdit && shift.canManageAssignments && (
             <p className="text-sm leading-6 text-muted-foreground">
-              Shift details are locked because the cutoff window has passed, but
-              you can still finish staffing it until the shift starts.
+              Details are locked, but staffing stays open until the shift
+              starts.
             </p>
           )}
           {shift && !shift.canManageAssignments && (
             <p className="text-sm leading-6 text-muted-foreground">
-              This shift has already started. People can still appear here
-              because they fit the shift, but assignments can no longer be
-              changed.
+              This shift has already started, so staffing is locked.
             </p>
           )}
         </div>
@@ -269,7 +265,10 @@ export function ShiftAssignmentPanel() {
                           Target hours: {option.staff.desiredHours}h
                         </Badge>
                         <Badge variant="outline">
-                          Skills: {option.staff.skills.join(", ")}
+                          Skills:{" "}
+                          <span className="capitalize">
+                            {option.staff.skills.join(", ")}
+                          </span>
                         </Badge>
                         {projectedHours && (
                           <Tooltip>

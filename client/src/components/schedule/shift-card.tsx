@@ -251,7 +251,8 @@ export function ShiftCard({ shift }: ShiftCardProps) {
               {shift.openSlots} open
             </p>
             <p className="text-xs leading-6 text-muted-foreground">
-              Required skill: {shift.requiredSkill}
+              Required skill:{" "}
+              <span className="capitalize">{shift.requiredSkill}</span>
             </p>
           </div>
         </div>
@@ -305,10 +306,8 @@ export function ShiftCard({ shift }: ShiftCardProps) {
               Suggested alternatives
             </h3>
             <p className="text-xs leading-6 text-muted-foreground">
-              These are the strongest matches based on skill, location
-              certification, availability, scheduling rule checks, and the
-              person&apos;s projected weekly hours. A locked shift can still show
-              suggestions even when assignments are no longer editable.
+              Best matches for this shift. Suggestions can still appear after
+              the edit cutoff.
             </p>
             <div className="flex flex-wrap gap-2">
               {shift.suggestions.map((staff) => (
